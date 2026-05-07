@@ -39,11 +39,7 @@ export default function DashboardLayout() {
 
       <ComposeFab onClick={() => setComposeOpen(true)} />
 
-      <ComposeModal
-        open={composeOpen}
-        onClose={() => setComposeOpen(false)}
-        replyToEmailId={null}
-      />
+      <ComposeModal open={composeOpen} onClose={() => setComposeOpen(false)} />
     </div>
   );
 }

@@ -19,13 +19,13 @@ export default function Footer({ variant = "light" }: FooterProps) {
     <footer
       className={cn("border-t", dark ? "border-white/10" : "border-border/60")}
     >
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col items-center gap-3 px-4 py-5 text-xs sm:flex-row sm:justify-between md:px-6">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col items-center gap-2 px-4 py-2 text-[11px] sm:flex-row sm:justify-between md:px-6">
         {/* Left: Privacy / Terms pills */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Link
             to="/privacy"
             className={cn(
-              "rounded-[8px] px-3 py-1 font-semibold uppercase tracking-wider ring-1 transition-colors",
+              "rounded-[6px] px-2 py-0.5 font-semibold uppercase tracking-wider ring-1 transition-colors",
               dark
                 ? "text-white/60 ring-white/15 hover:bg-white/5 hover:text-white"
                 : "text-text-secondary ring-border hover:bg-bg-subtle hover:text-text-primary",
@@ -36,7 +36,7 @@ export default function Footer({ variant = "light" }: FooterProps) {
           <Link
             to="/terms"
             className={cn(
-              "rounded-[8px] px-3 py-1 font-semibold uppercase tracking-wider ring-1 transition-colors",
+              "rounded-[6px] px-2 py-0.5 font-semibold uppercase tracking-wider ring-1 transition-colors",
               dark
                 ? "text-white/60 ring-white/15 hover:bg-white/5 hover:text-white"
                 : "text-text-secondary ring-border hover:bg-bg-subtle hover:text-text-primary",
@@ -47,24 +47,29 @@ export default function Footer({ variant = "light" }: FooterProps) {
         </div>
 
         {/* Center: copyright */}
-        <div className={dark ? "text-white/50" : "text-text-tertiary"}>
+        <div
+          className={cn(
+            "font-light",
+            dark ? "text-white/50" : "text-text-tertiary",
+          )}
+        >
           © {new Date().getFullYear()} saasmail
         </div>
 
         {/* Right: sponsor */}
         <div
           className={cn(
-            "flex items-center gap-2",
+            "flex items-center gap-1.5",
             dark ? "text-white/50" : "text-text-tertiary",
           )}
         >
-          <span>Sponsored by</span>
+          <span className="font-light">Sponsored by</span>
           <a
             href="https://givefeedback.dev/saas"
             target="_blank"
             rel="noreferrer"
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ring-1 transition-colors",
+              "inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 transition-colors",
               dark
                 ? "bg-white/[0.06] text-white ring-white/15 hover:bg-white/[0.1]"
                 : "bg-violet/10 text-violet ring-violet/20 hover:bg-violet/15",

@@ -302,7 +302,7 @@ export default function InboxPage() {
         </>
       )}
 
-      <div className="-mx-4 flex h-[calc(100vh-13rem)] min-h-[420px] flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border">
+      <div className="-mx-4 flex h-[calc(100vh-7rem)] min-h-[420px] flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border">
         {view === "table" ? (
           selectedPerson ? (
             // Table view + person open → full-width person detail.
