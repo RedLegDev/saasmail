@@ -71,14 +71,16 @@ export default function InboxToolbar({
       <div className="relative w-full min-w-[180px] flex-1 sm:w-auto sm:max-w-xs">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
         <input
+          data-testid="person-search-input"
           type="text"
-          placeholder="Search people, subjects, emails…"
+          placeholder="Search..."
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           className="h-10 w-full rounded-[6px] border-0 bg-transparent pl-9 pr-8 text-base text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary/15 sm:h-8 sm:pl-8 sm:pr-7 sm:text-sm"
         />
         {search && (
           <button
+            data-testid="person-search-clear"
             onClick={() => onSearchChange("")}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-text-tertiary transition-colors hover:bg-bg-muted hover:text-text-primary"
             aria-label="Clear search"

@@ -7,8 +7,6 @@ import {
   Trash2,
   X,
   Loader2,
-  Pencil,
-  Check,
 } from "lucide-react";
 import {
   createInbox,
@@ -24,23 +22,19 @@ import { cn } from "@/lib/utils";
 
 /**
  * Admin "Inboxes" table. Real table layout with bulk select + bulk
- * actions, inline display-name editing, mode toggle per row, and a
- * collapsible member-assignment popover per row.
+ * actions, inline display-name editing (blur-to-save), mode toggle
+ * per row, and inline member-assignment chips.
  */
 export default function AdminInboxTable() {
   const [inboxes, setInboxes] = useState<AdminInbox[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [editingValue, setEditingValue] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [memberPopover, setMemberPopover] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([fetchAdminInboxes(), fetchAdminUsers()])
@@ -102,7 +96,6 @@ export default function AdminInboxTable() {
       );
       setNewEmail("");
       setNewDisplayName("");
-      setCreateOpen(false);
     } catch (err) {
       setCreateError(
         err instanceof Error ? err.message : "Failed to create inbox",
@@ -114,10 +107,7 @@ export default function AdminInboxTable() {
 
   async function commitName(inbox: AdminInbox, value: string) {
     const next = value.trim() === "" ? null : value.trim();
-    if (next === inbox.displayName) {
-      setEditingName(null);
-      return;
-    }
+    if (next === inbox.displayName) return;
     const res = await updateInboxSettings(inbox.email, { displayName: next });
     setInboxes((prev) =>
       prev.map((r) =>
@@ -126,7 +116,6 @@ export default function AdminInboxTable() {
           : r,
       ),
     );
-    setEditingName(null);
   }
 
   async function handleSetMode(inbox: AdminInbox, next: "thread" | "chat") {
@@ -213,122 +202,99 @@ export default function AdminInboxTable() {
 
   return (
     <div className="space-y-4">
-      {/* Top bar — Create button + (when armed) bulk action bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        {selected.size === 0 ? (
+      {/* Create form — always visible */}
+      <form
+        onSubmit={handleCreate}
+        className="rounded-[8px] bg-card p-4 ring-1 ring-border"
+      >
+        <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+          Create inbox
+        </div>
+        <div className="flex flex-col gap-2 md:flex-row">
+          <input
+            type="email"
+            required
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.currentTarget.value)}
+            placeholder="inbox@example.com"
+            data-testid="inbox-create-email"
+            className="h-9 flex-1 rounded-[6px] border border-border bg-card px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary/15"
+          />
+          <input
+            type="text"
+            value={newDisplayName}
+            onChange={(e) => setNewDisplayName(e.currentTarget.value)}
+            placeholder="Display name (optional)"
+            data-testid="inbox-create-display-name"
+            className="h-9 flex-1 rounded-[6px] border border-border bg-card px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary/15"
+          />
           <button
-            onClick={() => setCreateOpen((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-[8px] bg-text-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-text-primary/90"
+            type="submit"
+            data-testid="inbox-create-button"
+            disabled={creating || newEmail.trim() === ""}
+            className="inline-flex h-9 items-center gap-1.5 rounded-[6px] bg-text-primary px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-text-primary/90 disabled:opacity-50"
           >
             <Plus size={14} />
-            New inbox
+            {creating ? "Creating…" : "Create"}
           </button>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2 rounded-[8px] bg-text-primary px-3 py-2 text-sm text-white shadow-lg ring-1 ring-text-primary/20">
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white/15 px-2 text-xs font-bold tabular-nums">
-              {selected.size}
-            </span>
-            <span className="font-medium">selected</span>
-
-            <span className="mx-1 h-4 w-px bg-white/15" aria-hidden />
-
-            <button
-              onClick={() => handleBulkSetMode("thread")}
-              disabled={bulkBusy}
-              className="inline-flex items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.14] disabled:opacity-50"
-            >
-              <MessageSquare size={12} />
-              Thread mode
-            </button>
-            <button
-              onClick={() => handleBulkSetMode("chat")}
-              disabled={bulkBusy}
-              className="inline-flex items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.14] disabled:opacity-50"
-            >
-              <MessageCircle size={12} />
-              Chat mode
-            </button>
-            <button
-              onClick={() => handleDelete(Array.from(selected))}
-              disabled={bulkBusy}
-              className="inline-flex items-center gap-1.5 rounded-[6px] bg-red-500/[0.16] px-2.5 py-1.5 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/[0.25] disabled:opacity-50"
-            >
-              {bulkBusy ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Trash2 size={12} />
-              )}
-              Delete
-            </button>
-
-            <button
-              onClick={clearSelection}
-              className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
-              aria-label="Clear selection"
-            >
-              <X size={12} />
-              Clear
-            </button>
-          </div>
+        </div>
+        {createError && (
+          <div className="mt-2 text-xs text-destructive">{createError}</div>
         )}
-      </div>
+      </form>
 
-      {/* Inline create form */}
-      {createOpen && (
-        <form
-          onSubmit={handleCreate}
-          className="rounded-[8px] bg-card p-4 ring-1 ring-border"
-        >
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
-            Create inbox
-          </div>
-          <div className="flex flex-col gap-2 md:flex-row">
-            <input
-              type="email"
-              required
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.currentTarget.value)}
-              placeholder="inbox@example.com"
-              data-testid="inbox-create-email"
-              className="h-9 flex-1 rounded-[6px] border border-border bg-card px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary/15"
-            />
-            <input
-              type="text"
-              value={newDisplayName}
-              onChange={(e) => setNewDisplayName(e.currentTarget.value)}
-              placeholder="Display name (optional)"
-              data-testid="inbox-create-display-name"
-              className="h-9 flex-1 rounded-[6px] border border-border bg-card px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary/15"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setCreateOpen(false);
-                  setCreateError(null);
-                }}
-                className="rounded-[6px] border border-border px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-muted hover:text-text-primary"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                data-testid="inbox-create-button"
-                disabled={creating || newEmail.trim() === ""}
-                className="rounded-[6px] bg-text-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-text-primary/90 disabled:opacity-50"
-              >
-                {creating ? "Creating…" : "Create"}
-              </button>
-            </div>
-          </div>
-          {createError && (
-            <div className="mt-2 text-xs text-destructive">{createError}</div>
-          )}
-        </form>
+      {/* Bulk action bar — visible when selection ≥ 1 */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[8px] bg-text-primary px-3 py-2 text-sm text-white shadow-lg ring-1 ring-text-primary/20">
+          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white/15 px-2 text-xs font-bold tabular-nums">
+            {selected.size}
+          </span>
+          <span className="font-medium">selected</span>
+
+          <span className="mx-1 h-4 w-px bg-white/15" aria-hidden />
+
+          <button
+            onClick={() => handleBulkSetMode("thread")}
+            disabled={bulkBusy}
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.14] disabled:opacity-50"
+          >
+            <MessageSquare size={12} />
+            Thread mode
+          </button>
+          <button
+            onClick={() => handleBulkSetMode("chat")}
+            disabled={bulkBusy}
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-white/[0.08] px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.14] disabled:opacity-50"
+          >
+            <MessageCircle size={12} />
+            Chat mode
+          </button>
+          <button
+            onClick={() => handleDelete(Array.from(selected))}
+            disabled={bulkBusy}
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-red-500/[0.16] px-2.5 py-1.5 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/[0.25] disabled:opacity-50"
+          >
+            {bulkBusy ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Trash2 size={12} />
+            )}
+            Delete
+          </button>
+
+          <button
+            onClick={clearSelection}
+            className="ml-auto inline-flex items-center gap-1 rounded-[6px] px-2 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+            aria-label="Clear selection"
+          >
+            <X size={12} />
+            Clear
+          </button>
+        </div>
       )}
 
       {/* Empty state */}
-      {inboxes.length === 0 && !createOpen && (
+      {inboxes.length === 0 && (
         <div className="rounded-[8px] bg-card p-10 text-center ring-1 ring-border">
           <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-violet/10">
             <InboxIcon size={20} style={{ color: "#7c5cfc" }} />
@@ -336,16 +302,9 @@ export default function AdminInboxTable() {
           <p className="mb-1 text-sm font-medium text-text-primary">
             No inboxes yet
           </p>
-          <p className="mb-4 text-xs font-light text-text-tertiary">
-            Create your first inbox or wait for inbound email.
+          <p className="text-xs font-light text-text-tertiary">
+            Use the form above to create your first inbox.
           </p>
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-[8px] bg-text-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-text-primary/90"
-          >
-            <Plus size={14} />
-            New inbox
-          </button>
         </div>
       )}
 
@@ -375,7 +334,6 @@ export default function AdminInboxTable() {
               <tbody>
                 {inboxes.map((inbox) => {
                   const isSelected = selected.has(inbox.email);
-                  const isEditing = editingName === inbox.email;
                   return (
                     <tr
                       key={inbox.email}
@@ -411,67 +369,12 @@ export default function AdminInboxTable() {
                         </div>
                       </td>
 
-                      {/* Display name (inline edit) */}
+                      {/* Display name (inline editable, blur to save) */}
                       <td className="px-3 py-2.5">
-                        {isEditing ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              autoFocus
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  commitName(inbox, editingValue);
-                                } else if (e.key === "Escape") {
-                                  setEditingName(null);
-                                }
-                              }}
-                              data-testid="inbox-display-name-input"
-                              className="h-8 w-full rounded-[6px] border border-border bg-card px-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary/15"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => commitName(inbox, editingValue)}
-                              className="flex h-7 w-7 items-center justify-center rounded-[5px] text-text-secondary hover:bg-bg-muted hover:text-text-primary"
-                              aria-label="Save"
-                            >
-                              <Check size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingName(null)}
-                              className="flex h-7 w-7 items-center justify-center rounded-[5px] text-text-tertiary hover:bg-bg-muted hover:text-text-secondary"
-                              aria-label="Cancel"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingName(inbox.email);
-                              setEditingValue(inbox.displayName ?? "");
-                            }}
-                            className="group/name inline-flex h-7 max-w-full items-center gap-1.5 rounded-[5px] px-2 text-left text-sm transition-colors hover:bg-bg-muted"
-                          >
-                            <span
-                              className={cn(
-                                "truncate",
-                                inbox.displayName
-                                  ? "text-text-primary"
-                                  : "font-light italic text-text-tertiary",
-                              )}
-                            >
-                              {inbox.displayName || "Set a name…"}
-                            </span>
-                            <Pencil
-                              size={11}
-                              className="shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover/name:opacity-100"
-                            />
-                          </button>
-                        )}
+                        <DisplayNameInput
+                          inbox={inbox}
+                          onCommit={(v) => commitName(inbox, v)}
+                        />
                       </td>
 
                       {/* Mode */}
@@ -505,22 +408,46 @@ export default function AdminInboxTable() {
                         </div>
                       </td>
 
-                      {/* Members */}
+                      {/* Members — inline chip toggles */}
                       <td className="px-3 py-2.5">
-                        <MemberCell
-                          inbox={inbox}
-                          members={members}
-                          open={memberPopover === inbox.email}
-                          onOpen={() =>
-                            setMemberPopover(
-                              memberPopover === inbox.email
-                                ? null
-                                : inbox.email,
-                            )
-                          }
-                          onClose={() => setMemberPopover(null)}
-                          onToggle={(uid) => handleToggleAssignment(inbox, uid)}
-                        />
+                        {members.length === 0 ? (
+                          <span className="text-xs font-light italic text-text-tertiary">
+                            Admins only
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {members.map((u) => {
+                              const on = inbox.assignedUserIds.includes(u.id);
+                              return (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  data-testid="inbox-member-toggle"
+                                  data-user-id={u.id}
+                                  data-assigned={on}
+                                  onClick={() =>
+                                    handleToggleAssignment(inbox, u.id)
+                                  }
+                                  title={u.email}
+                                  className={cn(
+                                    "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors",
+                                    on
+                                      ? "border-violet/30 bg-violet/10 text-violet"
+                                      : "border-border bg-bg-muted/40 text-text-tertiary hover:border-text-primary/30 hover:text-text-secondary",
+                                  )}
+                                  style={on ? { color: "#7c5cfc" } : undefined}
+                                >
+                                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-current/10 text-[9px] font-semibold">
+                                    {(u.name || u.email)[0]?.toUpperCase()}
+                                  </span>
+                                  <span className="truncate max-w-[120px]">
+                                    {u.name || u.email}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -544,6 +471,40 @@ export default function AdminInboxTable() {
         </div>
       )}
     </div>
+  );
+}
+
+interface DisplayNameInputProps {
+  inbox: AdminInbox;
+  onCommit: (value: string) => Promise<void>;
+}
+function DisplayNameInput({ inbox, onCommit }: DisplayNameInputProps) {
+  const [value, setValue] = useState(inbox.displayName ?? "");
+
+  // Resync when underlying inbox displayName changes (e.g. after refresh).
+  useEffect(() => {
+    setValue(inbox.displayName ?? "");
+  }, [inbox.displayName]);
+
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.currentTarget.value)}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.currentTarget as HTMLInputElement).blur();
+        } else if (e.key === "Escape") {
+          setValue(inbox.displayName ?? "");
+          (e.currentTarget as HTMLInputElement).blur();
+        }
+      }}
+      placeholder="Set a name…"
+      data-testid="inbox-display-name-input"
+      className="h-8 w-full rounded-[6px] border border-transparent bg-transparent px-2 text-sm text-text-primary placeholder:font-light placeholder:italic placeholder:text-text-tertiary hover:border-border focus:border-border focus:bg-card focus:outline-none focus:ring-2 focus:ring-text-primary/15"
+    />
   );
 }
 
@@ -582,124 +543,5 @@ function Checkbox({ checked, onChange, ariaLabel }: CheckboxProps) {
         </svg>
       )}
     </button>
-  );
-}
-
-interface MemberCellProps {
-  inbox: AdminInbox;
-  members: AdminUser[];
-  open: boolean;
-  onOpen: () => void;
-  onClose: () => void;
-  onToggle: (userId: string) => void;
-}
-
-function MemberCell({
-  inbox,
-  members,
-  open,
-  onOpen,
-  onClose,
-  onToggle,
-}: MemberCellProps) {
-  const assigned = members.filter((m) => inbox.assignedUserIds.includes(m.id));
-  const display = assigned.slice(0, 3);
-
-  return (
-    <div className="relative inline-block">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex h-7 items-center gap-1.5 rounded-[5px] px-2 text-xs transition-colors hover:bg-bg-muted"
-      >
-        {display.length === 0 ? (
-          <span className="font-light text-text-tertiary">
-            Admins only · assign…
-          </span>
-        ) : (
-          <>
-            <div className="flex -space-x-1">
-              {display.map((u) => (
-                <span
-                  key={u.id}
-                  title={u.name || u.email}
-                  className="flex h-5 w-5 items-center justify-center rounded-full bg-bg-muted text-[9px] font-semibold text-text-secondary ring-2 ring-card"
-                >
-                  {(u.name || u.email)[0]?.toUpperCase()}
-                </span>
-              ))}
-            </div>
-            <span className="text-text-secondary">
-              {assigned.length} member{assigned.length !== 1 ? "s" : ""}
-            </span>
-          </>
-        )}
-      </button>
-
-      {open && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-10"
-            aria-hidden
-            onClick={onClose}
-            tabIndex={-1}
-          />
-          <div className="absolute left-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-[8px] border border-border bg-card py-1 shadow-lg">
-            <div className="border-b border-border px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
-                Members for {inbox.email.split("@")[0]}
-              </p>
-              <p className="mt-0.5 text-[11px] font-light text-text-tertiary">
-                Admins always have access.
-              </p>
-            </div>
-            <div className="max-h-56 overflow-y-auto smooth-scroll py-1">
-              {members.length === 0 ? (
-                <p className="px-3 py-2 text-xs font-light text-text-tertiary">
-                  No members to assign.
-                </p>
-              ) : (
-                members.map((u) => {
-                  const on = inbox.assignedUserIds.includes(u.id);
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      data-testid="inbox-member-toggle"
-                      data-user-id={u.id}
-                      data-assigned={on}
-                      onClick={() => onToggle(u.id)}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-bg-muted"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-muted text-[10px] font-semibold text-text-secondary">
-                          {(u.name || u.email)[0]?.toUpperCase()}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-text-primary">
-                            {u.name || u.email}
-                          </span>
-                          {u.name && (
-                            <span className="block truncate text-[10px] font-light text-text-tertiary">
-                              {u.email}
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      <Checkbox
-                        checked={on}
-                        onChange={() => onToggle(u.id)}
-                        ariaLabel={`${on ? "Unassign" : "Assign"} ${u.name || u.email}`}
-                      />
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
   );
 }

@@ -108,7 +108,7 @@ export default function ApiKeysPage() {
                     <div>
                       <p className="font-mono text-sm font-medium text-text-primary">
                         {keyInfo.prefix}
-                        <span className="text-text-tertiary">…</span>
+                        <span className="text-text-tertiary">...</span>
                       </p>
                       <p className="mt-0.5 text-xs font-light text-text-tertiary">
                         Created{" "}
@@ -153,7 +153,7 @@ export default function ApiKeysPage() {
                   onClick={handleGenerate}
                   className="inline-flex items-center gap-1.5 rounded-[8px] bg-text-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-text-primary/90"
                 >
-                  Generate API key
+                  Generate API Key
                 </button>
               </div>
             )}
@@ -199,8 +199,8 @@ export default function ApiKeysPage() {
           <DialogHeader>
             <DialogTitle className="text-text-primary">
               {confirmAction === "regenerate"
-                ? "Regenerate API key?"
-                : "Revoke API key?"}
+                ? "Regenerate API Key?"
+                : "Revoke API Key?"}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm font-light text-text-secondary">

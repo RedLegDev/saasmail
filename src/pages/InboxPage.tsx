@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useOutletContext } from "react-router-dom";
 import { ArrowLeft, PenSquare } from "lucide-react";
 
@@ -41,7 +41,7 @@ export default function InboxPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [filters, setFilters] = useState<InboxFilters>({});
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<InboxView>("table");
+  const [view, setView] = useState<InboxView>("list");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -434,9 +434,9 @@ export default function InboxPage() {
                     ✦
                   </span>
                   <p className="max-w-[280px] text-sm font-light text-text-tertiary">
-                    Pick a person from the list to read their full timeline, or
-                    switch to <span className="font-medium">Table</span> view
-                    for an overview.
+                    Select a person to view emails, or switch to{" "}
+                    <span className="font-medium">Table</span> view for an
+                    overview.
                   </p>
                 </div>
               )}

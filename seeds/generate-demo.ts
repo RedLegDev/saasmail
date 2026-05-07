@@ -491,6 +491,7 @@ interface SentReply {
   to: string;
   subject: string;
   bodyHtml: string;
+  bodyText: string;
   inReplyTo: string | null;
   sentOffsetSec: number;
 }
@@ -562,18 +563,18 @@ function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
       if (!isAutomated && chance(0.3)) {
         const replyOffsetSec = randInt(1800, 86400 * 2);
         const lastEmail = emails[emails.length - 1];
+        const replyText = inflateBody(
+          "Thanks for reaching out — I've looped in the right person on our side. Will follow up shortly with a more concrete answer.",
+          randInt(30, 80),
+        );
         sent.push({
           id: `s_${sId.toString().padStart(4, "0")}`,
           personId: p.id,
           fromAddress: inbox,
           to: p.email,
           subject: `Re: ${base.subject}`,
-          bodyHtml: bodyHtml(
-            inflateBody(
-              "Thanks for reaching out — I've looped in the right person on our side. Will follow up shortly with a more concrete answer.",
-              randInt(30, 80),
-            ),
-          ),
+          bodyHtml: bodyHtml(replyText),
+          bodyText: replyText,
           inReplyTo: lastEmail.id,
           sentOffsetSec: Math.max(
             lastEmail.receivedOffsetSec - replyOffsetSec,
@@ -673,7 +674,7 @@ function renderSql(): string {
         chunk
           .map(
             (s) =>
-              `  ('${s.id}', '${s.personId}', '${sqlEscape(s.to)}', '${s.fromAddress}', '${sqlEscape(s.subject)}', '${s.bodyHtml}', '${sqlEscape(s.bodyHtml.replace(/<[^>]+>/g, ""))}', ${s.inReplyTo ? `'${s.inReplyTo}'` : "NULL"}, 'sent', (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}), (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}))`,
+              `  ('${s.id}', '${s.personId}', '${sqlEscape(s.to)}', '${s.fromAddress}', '${sqlEscape(s.subject)}', '${s.bodyHtml}', '${sqlEscape(s.bodyText)}', ${s.inReplyTo ? `'${s.inReplyTo}'` : "NULL"}, 'sent', (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}), (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}))`,
           )
           .join(",\n") + ";",
       );

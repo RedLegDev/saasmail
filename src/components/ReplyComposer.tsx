@@ -182,6 +182,7 @@ export default function ReplyComposer({
         <DialogPrimitive.Overlay className="drawer-overlay fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[2px]" />
         <DialogPrimitive.Content
           onKeyDown={handleKeyDown}
+          data-testid="reply-composer"
           className="drawer-content fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-card shadow-2xl ring-1 ring-border focus:outline-none sm:max-w-[920px]"
         >
           {/* Header */}
