@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Plus, FileText, Pencil, Trash2 } from "lucide-react";
 import { fetchTemplates, deleteTemplate } from "@/lib/api";
 import type { EmailTemplate } from "@/lib/api";
@@ -64,8 +64,8 @@ export default function TemplatesPage() {
                   data-template-slug={t.slug}
                   className="group flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-text-primary/[0.02]"
                 >
-                  <button
-                    onClick={() => navigate(`/templates/${t.slug}/edit`)}
+                  <Link
+                    to={`/templates/${t.slug}/edit`}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] bg-bg-muted">
@@ -80,7 +80,7 @@ export default function TemplatesPage() {
                         {t.subject}
                       </p>
                     </div>
-                  </button>
+                  </Link>
                   <div className="flex shrink-0 items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
                     <button
                       onClick={() => navigate(`/templates/${t.slug}/edit`)}

@@ -59,6 +59,13 @@ export function useReducedAnimations(): boolean {
 function evaluate(): boolean {
   if (typeof window === "undefined") return false;
 
+  // Headless browsers (Playwright, Selenium, etc.) report navigator.webdriver
+  // as true. The WebGL shader causes GPU stalls under CI Chromium that can
+  // freeze the page mid-test, so always fall back to the static backdrop.
+  if (typeof navigator !== "undefined" && navigator.webdriver) {
+    return true;
+  }
+
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
     return true;
   }
