@@ -251,7 +251,7 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-2 pt-2 md:px-6">
+    <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col px-4 pb-3 pt-2 md:px-6">
       {/* Toolbar — search + filters + view toggle + Compose, all on one
           unified bar. The dashboard chrome (TopNav) already tells the user
           they're on the inbox, so no page title is needed.
@@ -302,13 +302,7 @@ export default function InboxPage() {
         </>
       )}
 
-      <div
-        className={`-mx-4 flex flex-1 flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border ${
-          selectedPerson
-            ? "h-[calc(100vh-9rem)] min-h-[420px] sm:h-[calc(100vh-9rem)] sm:min-h-[520px]"
-            : "h-[calc(100vh-9rem)] min-h-[480px] sm:h-[calc(100vh-9rem)] sm:min-h-[520px]"
-        }`}
-      >
+      <div className="-mx-4 flex h-[calc(100vh-13rem)] min-h-[420px] flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border">
         {view === "table" ? (
           selectedPerson ? (
             // Table view + person open → full-width person detail.

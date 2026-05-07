@@ -29,7 +29,7 @@ export default function DashboardLayout() {
       <TopNav />
       <Breadcrumbs />
 
-      <main className="relative z-10 flex flex-1 flex-col">
+      <main className="relative z-10 flex min-h-0 flex-1 flex-col">
         <Outlet context={{ onCompose: () => setComposeOpen(true) }} />
       </main>
 
