@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useOutletContext } from "react-router-dom";
-import { ArrowLeft, PenSquare } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 interface InboxOutletContext {
   onCompose: () => void;
@@ -251,32 +251,10 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-12 md:px-6">
-      {/* Page header — compact on mobile, expansive on desktop. Compose
-          button is hidden on mobile (the floating FAB replaces it).
-          On mobile we hide the header entirely when a person is open so
-          the conversation gets full-screen real estate. */}
-      <div
-        className={`mb-2 items-center justify-between gap-3 pt-3 sm:mb-3 sm:pt-4 ${selectedPerson ? "hidden sm:flex" : "flex"}`}
-      >
-        <div className="flex flex-wrap items-baseline gap-x-3">
-          <h1 className="text-xl font-extrabold tracking-tight text-text-primary sm:text-2xl">
-            Inbox
-          </h1>
-          <p className="text-xs font-light text-text-tertiary sm:text-sm">
-            One unified timeline per customer.
-          </p>
-        </div>
-        <button
-          onClick={onCompose}
-          className="hidden shrink-0 items-center gap-1.5 rounded-[6px] bg-text-primary px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-text-primary/90 sm:inline-flex"
-        >
-          <PenSquare className="h-3.5 w-3.5" />
-          Compose
-        </button>
-      </div>
-
-      {/* Toolbar — search + filters + view toggle, all on one row.
+    <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 pb-2 pt-2 md:px-6">
+      {/* Toolbar — search + filters + view toggle + Compose, all on one
+          unified bar. The dashboard chrome (TopNav) already tells the user
+          they're on the inbox, so no page title is needed.
           Hidden when a person is open in table view to keep the focus on
           the conversation. (Toggle stays accessible via the back button.) */}
       {!(view === "table" && selectedPerson) && (
@@ -293,6 +271,7 @@ export default function InboxPage() {
               setSelectedPerson(null);
               clearSelection();
             }}
+            onCompose={onCompose}
           />
         </div>
       )}
@@ -324,10 +303,10 @@ export default function InboxPage() {
       )}
 
       <div
-        className={`-mx-4 flex flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border ${
+        className={`-mx-4 flex flex-1 flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border ${
           selectedPerson
-            ? "h-[calc(100vh-6rem)] min-h-[420px] sm:h-[calc(100vh-13rem)] sm:min-h-[520px]"
-            : "h-[calc(100vh-14rem)] min-h-[480px] sm:h-[calc(100vh-14rem)] sm:min-h-[520px]"
+            ? "h-[calc(100vh-9rem)] min-h-[420px] sm:h-[calc(100vh-9rem)] sm:min-h-[520px]"
+            : "h-[calc(100vh-9rem)] min-h-[480px] sm:h-[calc(100vh-9rem)] sm:min-h-[520px]"
         }`}
       >
         {view === "table" ? (

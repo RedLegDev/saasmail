@@ -6,6 +6,7 @@ import {
   Search,
   LayoutList,
   LayoutGrid,
+  PenSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,8 @@ interface InboxToolbarProps {
   onSearchChange: (q: string) => void;
   view: InboxView;
   onViewChange: (v: InboxView) => void;
+  /** Optional Compose button. Rendered to the right of the view toggle. */
+  onCompose?: () => void;
 }
 
 function inboxOptionLabel(o: InboxOption) {
@@ -44,6 +47,7 @@ export default function InboxToolbar({
   onSearchChange,
   view,
   onViewChange,
+  onCompose,
 }: InboxToolbarProps) {
   const [inboxOpen, setInboxOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -216,6 +220,24 @@ export default function InboxToolbar({
           onClick={() => onViewChange("table")}
         />
       </div>
+
+      {/* Compose — anchored at the far right of the unified bar. Hidden on
+          mobile (the floating FAB takes over there). */}
+      {onCompose && (
+        <>
+          <span
+            className="mx-0.5 hidden h-4 w-px bg-border sm:block"
+            aria-hidden
+          />
+          <button
+            onClick={onCompose}
+            className="hidden h-7 shrink-0 items-center gap-1.5 rounded-[5px] bg-text-primary px-2.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-text-primary/90 sm:inline-flex"
+          >
+            <PenSquare className="h-3.5 w-3.5" />
+            Compose
+          </button>
+        </>
+      )}
     </div>
   );
 }
