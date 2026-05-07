@@ -62,7 +62,12 @@ export default function InviteAcceptPage() {
         setError("Account created but sign-in failed. Please go to login.");
         return;
       }
-      window.location.href = passkeyRequired ? "/setup-passkey" : "/";
+      // Redirect home regardless of passkey gating; the auth guard will
+      // bounce to /setup-passkey if needed once the session is loaded.
+      // This avoids a race where /api/config hasn't responded yet and we
+      // end up stuck on /invite/ while passkeyRequired flips.
+      void passkeyRequired;
+      window.location.href = "/";
     } catch (err: any) {
       setError(err?.message || "Failed to accept invitation");
     } finally {

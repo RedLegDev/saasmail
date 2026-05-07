@@ -123,7 +123,7 @@ export default function LoginPage() {
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#24292f] px-4 text-sm font-semibold text-white ring-1 ring-white/15 transition-colors hover:bg-[#24292f]/80"
             >
               <Mail className="h-4 w-4" strokeWidth={2.25} />
-              Continue with email
+              Sign in with email instead
             </button>
           </div>
         ) : (
@@ -138,6 +138,7 @@ export default function LoginPage() {
               <input
                 id="login-email"
                 type="email"
+                placeholder="Email"
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -155,6 +156,7 @@ export default function LoginPage() {
               <input
                 id="login-password"
                 type="password"
+                placeholder="Password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -171,8 +173,12 @@ export default function LoginPage() {
                 "Signing in…"
               ) : (
                 <>
-                  Sign in
-                  <ArrowRight className="h-4 w-4" strokeWidth={2.25} />
+                  <span>Sign in</span>
+                  <ArrowRight
+                    className="h-4 w-4"
+                    strokeWidth={2.25}
+                    aria-hidden
+                  />
                 </>
               )}
             </button>
@@ -184,7 +190,7 @@ export default function LoginPage() {
               }}
               className="block w-full text-center text-xs font-light text-white/50 transition-colors hover:text-white/80"
             >
-              Use a passkey instead
+              Sign in with passkey instead
             </button>
           </form>
         )}

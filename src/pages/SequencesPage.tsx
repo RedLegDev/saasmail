@@ -101,6 +101,7 @@ export default function SequencesPage() {
                     </button>
                     <button
                       onClick={() => handleDelete(seq.id)}
+                      aria-label="Delete"
                       className="inline-flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
                     >
                       <Trash2 size={12} />

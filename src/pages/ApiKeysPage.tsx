@@ -108,7 +108,6 @@ export default function ApiKeysPage() {
                     <div>
                       <p className="font-mono text-sm font-medium text-text-primary">
                         {keyInfo.prefix}
-                        <span className="text-text-tertiary">...</span>
                       </p>
                       <p className="mt-0.5 text-xs font-light text-text-tertiary">
                         Created{" "}

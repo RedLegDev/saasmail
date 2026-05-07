@@ -25,7 +25,7 @@ export default function TemplatesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Templates"
+        title="Email Templates"
         subtitle="Reusable HTML email templates with {{variable}} interpolation. Send via the UI or API."
         action={
           <button
@@ -98,6 +98,7 @@ export default function TemplatesPage() {
                     </button>
                     <button
                       onClick={() => handleDelete(t.slug)}
+                      aria-label="Delete"
                       className="inline-flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
                     >
                       <Trash2 size={12} />
