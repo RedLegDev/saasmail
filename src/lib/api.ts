@@ -99,7 +99,11 @@ export interface Stats {
   totalEmails: number;
   unreadCount: number;
   recipients: string[];
-  senderIdentities: Array<{ email: string; displayName: string | null }>;
+  senderIdentities: Array<{
+    email: string;
+    displayName: string | null;
+    signatureHtml: string | null;
+  }>;
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -576,6 +580,7 @@ export interface AdminInbox {
   email: string;
   displayName: string | null;
   displayMode: InboxDisplayMode;
+  signatureHtml: string | null;
   assignedUserIds: string[];
 }
 
@@ -597,11 +602,16 @@ export async function createInbox(data: {
 
 export async function updateInboxSettings(
   email: string,
-  patch: { displayName?: string | null; displayMode?: InboxDisplayMode },
+  patch: {
+    displayName?: string | null;
+    displayMode?: InboxDisplayMode;
+    signatureHtml?: string | null;
+  },
 ): Promise<{
   email: string;
   displayName: string | null;
   displayMode: InboxDisplayMode;
+  signatureHtml: string | null;
 }> {
   return apiFetch(`/api/admin/inboxes/${encodeURIComponent(email)}`, {
     method: "PATCH",

@@ -22,10 +22,17 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
   const [cc, setCc] = useState<CcEntry[]>([]);
   const [recipients, setRecipients] = useState<string[]>([]);
   const [senderIdentities, setSenderIdentities] = useState<
-    Array<{ email: string; displayName: string | null }>
+    Array<{
+      email: string;
+      displayName: string | null;
+      signatureHtml: string | null;
+    }>
   >([]);
   const [subject, setSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
+  // Tracked separately from the body so swapping `From` mid-compose can swap
+  // the signature without stomping on what the user has typed.
+  const [signatureHtml, setSignatureHtml] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -56,21 +63,40 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
       setCc([]);
       setSubject("");
       setBodyHtml("");
+      setSignatureHtml(null);
       setError("");
     }
   }, [open]);
+
+  // Whenever the From inbox or the loaded identity list changes, swap the
+  // signature trail to match. Stays a separate state slot so the user's
+  // typed body never gets clobbered.
+  useEffect(() => {
+    if (!fromAddress) {
+      setSignatureHtml(null);
+      return;
+    }
+    const match = senderIdentities.find((s) => s.email === fromAddress);
+    setSignatureHtml(match?.signatureHtml ?? null);
+  }, [fromAddress, senderIdentities]);
 
   async function handleSend() {
     if (!to || bodyIsEmpty) return;
     setSending(true);
     setError("");
     try {
+      // Concatenate the typed body + auto-attached signature on send.
+      // The signature is wrapped in `data-signature` so the chat-feed
+      // toggle can strip it back out cleanly.
+      const finalBody = signatureHtml
+        ? `${bodyHtml}<div data-signature>${signatureHtml}</div>`
+        : bodyHtml;
       await sendEmail({
         to,
         fromAddress,
         ...(cc.length > 0 ? { cc } : {}),
         subject,
-        bodyHtml,
+        bodyHtml: finalBody,
       });
       onClose();
     } catch {
@@ -205,6 +231,16 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
           >
             <div className="flex h-full min-h-[320px] flex-col p-6">
               <TiptapEditor content={bodyHtml} onUpdate={setBodyHtml} />
+              {signatureHtml && (
+                <div
+                  data-signature
+                  data-testid="compose-signature-preview"
+                  className="mt-4 border-t border-border/60 pt-3 opacity-70"
+                  // Read-only signature preview. Auto-attached at send time;
+                  // edited via the admin Inboxes page rather than inline.
+                  dangerouslySetInnerHTML={{ __html: signatureHtml }}
+                />
+              )}
             </div>
           </div>
 

@@ -31,7 +31,11 @@ interface ReplyComposerProps {
   personName: string | null;
   personEmail: string;
   recipients: string[];
-  senderIdentities: Array<{ email: string; displayName: string | null }>;
+  senderIdentities: Array<{
+    email: string;
+    displayName: string | null;
+    signatureHtml?: string | null;
+  }>;
   /** Domains we treat as "internal" — used for CC chip color. */
   internalDomains?: string[];
   onClose: () => void;
@@ -66,8 +70,21 @@ export default function ReplyComposer({
   const [fromAddress, setFromAddress] = useState(recipients[0] ?? "");
   const [cc, setCc] = useState<CcEntry[]>([]);
   const [bodyHtml, setBodyHtml] = useState("");
+  // Stored separately from the body so swapping `From` mid-reply replaces
+  // the trailing signature without touching what the user has typed.
+  const [signatureHtml, setSignatureHtml] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+
+  // Sync the signature trail to the active From inbox.
+  useEffect(() => {
+    if (!fromAddress) {
+      setSignatureHtml(null);
+      return;
+    }
+    const match = senderIdentities.find((s) => s.email === fromAddress);
+    setSignatureHtml(match?.signatureHtml ?? null);
+  }, [fromAddress, senderIdentities]);
 
   // Thread context — the email being replied to + prior messages from the
   // same person/inbox so the user can reference them while drafting.
@@ -158,8 +175,15 @@ export default function ReplyComposer({
     const ccPayload = cc.length > 0 ? cc : undefined;
     try {
       if (tab === "freeform") {
+        // Wrap the signature in a marker div so the chat-feed "hide
+        // signatures" toggle can strip it cleanly. Skip when the inbox has
+        // none configured. Templates already include their own boilerplate
+        // so we don't append.
+        const finalBody = signatureHtml
+          ? `${bodyHtml}<div data-signature>${signatureHtml}</div>`
+          : bodyHtml;
         await replyToEmail(emailId, {
-          bodyHtml,
+          bodyHtml: finalBody,
           fromAddress,
           ...(ccPayload ? { cc: ccPayload } : {}),
         });
@@ -314,6 +338,14 @@ export default function ReplyComposer({
                     onUpdate={setBodyHtml}
                     placeholder="Write your reply…"
                   />
+                  {signatureHtml && (
+                    <div
+                      data-signature
+                      data-testid="reply-signature-preview"
+                      className="mt-4 border-t border-border/60 pt-3 opacity-70"
+                      dangerouslySetInnerHTML={{ __html: signatureHtml }}
+                    />
+                  )}
                 </div>
               </div>
             ) : (
