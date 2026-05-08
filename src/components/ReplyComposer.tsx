@@ -12,6 +12,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import TiptapEditor from "@/components/TiptapEditor";
+import CcInput from "@/components/CcInput";
 import {
   replyToEmail,
   fetchTemplates,
@@ -19,6 +20,7 @@ import {
   fetchPersonEmails,
   type EmailTemplate,
   type Email,
+  type CcEntry,
 } from "@/lib/api";
 import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import { getFromLabel } from "@/lib/format";
@@ -30,6 +32,8 @@ interface ReplyComposerProps {
   personEmail: string;
   recipients: string[];
   senderIdentities: Array<{ email: string; displayName: string | null }>;
+  /** Domains we treat as "internal" — used for CC chip color. */
+  internalDomains?: string[];
   onClose: () => void;
   onSent: () => void;
 }
@@ -54,11 +58,13 @@ export default function ReplyComposer({
   personEmail,
   recipients,
   senderIdentities,
+  internalDomains = [],
   onClose,
   onSent,
 }: ReplyComposerProps) {
   const [tab, setTab] = useState<Tab>("freeform");
   const [fromAddress, setFromAddress] = useState(recipients[0] ?? "");
+  const [cc, setCc] = useState<CcEntry[]>([]);
   const [bodyHtml, setBodyHtml] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -77,12 +83,20 @@ export default function ReplyComposer({
   const [templatesError, setTemplatesError] = useState("");
 
   // Load the email being replied to + the surrounding thread on mount.
+  // Pre-populate CC from the original message so "reply-all" semantics
+  // are the default — users can still trim chips before sending.
   useEffect(() => {
     let cancelled = false;
     fetchEmail(emailId)
       .then(async (email) => {
         if (cancelled) return;
         setOriginalEmail(email);
+        if (email.cc && email.cc.length > 0) {
+          // Drop our own inbox addresses from the suggested CC list — we
+          // don't want to CC ourselves on a reply we're sending.
+          const ours = new Set(recipients.map((r) => r.toLowerCase()));
+          setCc(email.cc.filter((c) => !ours.has(c.email.toLowerCase())));
+        }
         // If we have a personId, fetch the person's recent emails in this inbox.
         if (email.personId) {
           try {
@@ -103,7 +117,7 @@ export default function ReplyComposer({
     return () => {
       cancelled = true;
     };
-  }, [emailId]);
+  }, [emailId, recipients]);
 
   const selectedTemplate =
     templates.find((t) => t.slug === selectedSlug) ?? null;
@@ -141,9 +155,14 @@ export default function ReplyComposer({
   async function handleSend() {
     setSending(true);
     setError("");
+    const ccPayload = cc.length > 0 ? cc : undefined;
     try {
       if (tab === "freeform") {
-        await replyToEmail(emailId, { bodyHtml, fromAddress });
+        await replyToEmail(emailId, {
+          bodyHtml,
+          fromAddress,
+          ...(ccPayload ? { cc: ccPayload } : {}),
+        });
       } else {
         if (!selectedSlug) {
           setError("Select a template");
@@ -154,6 +173,7 @@ export default function ReplyComposer({
           templateSlug: selectedSlug,
           variables: templateVars,
           fromAddress,
+          ...(ccPayload ? { cc: ccPayload } : {}),
         });
       }
       onSent();
@@ -243,6 +263,17 @@ export default function ReplyComposer({
               <span className="truncate text-sm text-text-primary">
                 {recipientLabel}
               </span>
+            </div>
+            <div className="grid grid-cols-[60px_1fr] items-start gap-3 py-1">
+              <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                Cc
+              </span>
+              <CcInput
+                value={cc}
+                onChange={setCc}
+                internalDomains={internalDomains}
+                testId="reply-cc-input"
+              />
             </div>
           </div>
 

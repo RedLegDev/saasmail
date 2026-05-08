@@ -162,6 +162,7 @@ export async function handleEmail(
     dkim: parsed.auth.dkim,
     dmarc: parsed.auth.dmarc,
     isRead: 0,
+    cc: parsed.cc.length > 0 ? JSON.stringify(parsed.cc) : null,
     receivedAt: now,
     createdAt: now,
   });

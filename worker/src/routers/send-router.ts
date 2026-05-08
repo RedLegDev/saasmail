@@ -19,9 +19,21 @@ export const sendRouter = new OpenAPIHono<{
   Variables: Variables;
 }>();
 
+const CcEntrySchema = z.object({
+  email: z.string().email(),
+  name: z.string().nullable().optional(),
+});
+type CcEntry = z.infer<typeof CcEntrySchema>;
+
+/** Format a CC entry as a header-friendly "Name <addr>" string. */
+function formatCc(c: CcEntry): string {
+  return c.name ? `${c.name} <${c.email}>` : c.email;
+}
+
 const SendEmailSchema = z.object({
   to: z.string().email(),
   fromAddress: z.string().email(),
+  cc: z.array(CcEntrySchema).optional(),
   subject: z.string().transform((s) => s.replace(/[\r\n]+/g, " ")),
   bodyHtml: z.string(),
   bodyText: z.string().optional(),
@@ -55,7 +67,8 @@ const sendEmailRoute = createRoute({
 
 sendRouter.openapi(sendEmailRoute, async (c) => {
   const db = c.get("db");
-  const { to, fromAddress, subject, bodyHtml, bodyText } = c.req.valid("json");
+  const { to, fromAddress, cc, subject, bodyHtml, bodyText } =
+    c.req.valid("json");
   const allowed = c.get("allowedInboxes")!;
   assertInboxAllowed(allowed, fromAddress);
   const now = Math.floor(Date.now() / 1000);
@@ -66,6 +79,7 @@ sendRouter.openapi(sendEmailRoute, async (c) => {
   const result = await sender.send({
     from: formattedFrom,
     to,
+    ...(cc && cc.length > 0 ? { cc: cc.map(formatCc) } : {}),
     subject,
     html: bodyHtml,
     text: bodyText,
@@ -121,6 +135,7 @@ sendRouter.openapi(sendEmailRoute, async (c) => {
     messageId,
     resendId: result.id,
     status: result.error ? "failed" : "sent",
+    cc: cc && cc.length > 0 ? JSON.stringify(cc) : null,
     sentAt: now,
     createdAt: now,
   });
@@ -153,6 +168,7 @@ const replyEmailRoute = createRoute({
             bodyHtml: z.string().optional(),
             bodyText: z.string().optional(),
             fromAddress: z.string().email(),
+            cc: z.array(CcEntrySchema).optional(),
             templateSlug: z.string().optional(),
             variables: z.record(z.string(), z.string()).optional(),
           }),
@@ -168,7 +184,7 @@ const replyEmailRoute = createRoute({
 sendRouter.openapi(replyEmailRoute, async (c) => {
   const db = c.get("db");
   const { emailId } = c.req.valid("param");
-  const { bodyHtml, bodyText, fromAddress, templateSlug, variables } =
+  const { bodyHtml, bodyText, fromAddress, cc, templateSlug, variables } =
     c.req.valid("json");
   const allowed = c.get("allowedInboxes")!;
   assertInboxAllowed(allowed, fromAddress);
@@ -280,6 +296,7 @@ sendRouter.openapi(replyEmailRoute, async (c) => {
   const result = await sender.send({
     from: formattedFrom,
     to: toAddress,
+    ...(cc && cc.length > 0 ? { cc: cc.map(formatCc) } : {}),
     subject: finalSubject,
     html: finalBodyHtml,
     text: bodyText,
@@ -305,6 +322,7 @@ sendRouter.openapi(replyEmailRoute, async (c) => {
     messageId,
     resendId: result.id,
     status: result.error ? "failed" : "sent",
+    cc: cc && cc.length > 0 ? JSON.stringify(cc) : null,
     sentAt: now,
     createdAt: now,
   });

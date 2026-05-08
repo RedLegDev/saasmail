@@ -6,9 +6,16 @@ export interface AuthResults {
   dmarc: string | null;
 }
 
+export interface ParsedEmailAddress {
+  email: string;
+  name: string | null;
+}
+
 export interface ParsedEmail {
   from: { address: string; name: string };
   to: string;
+  /** Additional recipients on the Cc: line, parsed from the MIME headers. */
+  cc: ParsedEmailAddress[];
   subject: string;
   bodyHtml: string | null;
   bodyText: string | null;
@@ -131,12 +138,25 @@ export async function parseEmail(
   const bodyText = parsed.text || null;
   const bodyHtml = parsed.html || null;
 
+  // Extract CC list from the parsed MIME structure. postal-mime exposes
+  // `parsed.cc` as an array of `{ address, name }` (or undefined). We
+  // normalize names to null so the column matches the rest of the schema.
+  const cc: ParsedEmailAddress[] = (
+    (parsed.cc as Array<{ address?: string; name?: string }> | undefined) ?? []
+  )
+    .filter((c): c is { address: string; name?: string } => !!c.address)
+    .map((c) => ({
+      email: c.address,
+      name: c.name && c.name.trim() ? c.name.trim() : null,
+    }));
+
   return {
     from: {
       address: parsed.from?.address || message.from,
       name: parsed.from?.name || "",
     },
     to: message.to,
+    cc,
     subject: parsed.subject || "",
     bodyHtml: bodyHtml ? trimQuotedHtml(bodyHtml) : null,
     bodyText: bodyText ? trimQuotedText(bodyText) : null,

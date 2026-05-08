@@ -189,6 +189,7 @@ export async function markPeopleRead(
 export async function sendEmail(data: {
   to: string;
   fromAddress: string;
+  cc?: CcEntry[];
   subject: string;
   bodyHtml: string;
   bodyText?: string;
@@ -206,6 +207,7 @@ export async function replyToEmail(
     bodyHtml?: string;
     bodyText?: string;
     fromAddress: string;
+    cc?: CcEntry[];
     templateSlug?: string;
     variables?: Record<string, string>;
   },

@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, Send, AtSign, PenSquare, Type } from "lucide-react";
 import TiptapEditor from "@/components/TiptapEditor";
-import { sendEmail, fetchStats } from "@/lib/api";
+import CcInput from "@/components/CcInput";
+import { sendEmail, fetchStats, type CcEntry } from "@/lib/api";
 import { getFromLabel } from "@/lib/format";
 
 interface ComposeModalProps {
@@ -18,6 +19,7 @@ interface ComposeModalProps {
 export default function ComposeModal({ open, onClose }: ComposeModalProps) {
   const [to, setTo] = useState("");
   const [fromAddress, setFromAddress] = useState("");
+  const [cc, setCc] = useState<CcEntry[]>([]);
   const [recipients, setRecipients] = useState<string[]>([]);
   const [senderIdentities, setSenderIdentities] = useState<
     Array<{ email: string; displayName: string | null }>
@@ -26,6 +28,16 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
   const [bodyHtml, setBodyHtml] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+
+  // Domains we own — used for the lime/neutral CC chip color.
+  const internalDomains = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of senderIdentities) {
+      const at = s.email.lastIndexOf("@");
+      if (at >= 0) set.add(s.email.slice(at + 1).toLowerCase());
+    }
+    return Array.from(set);
+  }, [senderIdentities]);
 
   // TipTap emits "<p></p>" for an empty editor — treat that as empty.
   const bodyIsEmpty = !bodyHtml || bodyHtml === "<p></p>";
@@ -41,6 +53,7 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
       });
     } else {
       setTo("");
+      setCc([]);
       setSubject("");
       setBodyHtml("");
       setError("");
@@ -52,7 +65,13 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
     setSending(true);
     setError("");
     try {
-      await sendEmail({ to, fromAddress, subject, bodyHtml });
+      await sendEmail({
+        to,
+        fromAddress,
+        ...(cc.length > 0 ? { cc } : {}),
+        subject,
+        bodyHtml,
+      });
       onClose();
     } catch {
       setError("Failed to send email");
@@ -146,6 +165,17 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
                 placeholder="recipient@example.com"
                 aria-label="To"
                 className="rounded-[6px] border border-border bg-card px-2 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:ring-2 focus:ring-text-primary/15"
+              />
+            </div>
+            <div className="grid grid-cols-[60px_1fr] items-start gap-3 py-1">
+              <span className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
+                Cc
+              </span>
+              <CcInput
+                value={cc}
+                onChange={setCc}
+                internalDomains={internalDomains}
+                testId="compose-cc-input"
               />
             </div>
             <div className="grid grid-cols-[60px_1fr] items-center gap-3 py-1">

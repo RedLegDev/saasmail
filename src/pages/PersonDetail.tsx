@@ -410,6 +410,7 @@ export default function PersonDetail({
               return target ? replyInboxForEmail(target) : distinctInboxes;
             })()}
             senderIdentities={senderIdentities}
+            internalDomains={internalDomains}
             onClose={() => setReplyToEmailId(null)}
             onSent={refetchEmails}
           />
