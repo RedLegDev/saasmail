@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import { MessageSquare, Inbox } from "lucide-react";
 import MessageBubble from "@/components/MessageBubble";
 import { RosterDiffNotice } from "@/components/CcChips";
+import { rosterOf } from "@/lib/roster";
 import type { Email } from "@/lib/api";
 
 export interface ThreadInboxGroup {
@@ -77,8 +78,8 @@ export default function ThreadInboxSection({
               <Fragment key={email.id}>
                 {prev && (
                   <RosterDiffNotice
-                    prev={prev.cc ?? []}
-                    next={email.cc ?? []}
+                    prev={rosterOf(prev, senderResolver)}
+                    next={rosterOf(email, senderResolver)}
                     internalDomains={internalDomains}
                   />
                 )}
@@ -100,10 +101,11 @@ export default function ThreadInboxSection({
             {/* Roster diff between the last "older" email shown and the latest */}
             {isOlderExpanded && olderChronological.length > 0 && (
               <RosterDiffNotice
-                prev={
-                  olderChronological[olderChronological.length - 1].cc ?? []
-                }
-                next={latest.cc ?? []}
+                prev={rosterOf(
+                  olderChronological[olderChronological.length - 1],
+                  senderResolver,
+                )}
+                next={rosterOf(latest, senderResolver)}
                 internalDomains={internalDomains}
               />
             )}

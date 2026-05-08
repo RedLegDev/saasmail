@@ -13,6 +13,8 @@ import type { Email } from "@/lib/api";
 import type { ThreadInboxGroup } from "@/components/ThreadInboxSection";
 import ChatQuickReply from "@/components/ChatQuickReply";
 import CcChips, { RosterDiffNotice } from "@/components/CcChips";
+import { rosterOf, diffRosters } from "@/lib/roster";
+import type { ComposePrefill } from "@/pages/ComposeModal";
 import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import {
   HIDE_SIGNATURES_EVENT,
@@ -38,6 +40,14 @@ interface ChatInboxSectionProps {
   onMarkRead: (email: Email) => void;
   onDelete: (emailId: string) => void;
   onSent: () => void;
+  /**
+   * Optional handoff to the global compose drawer. When provided, the
+   * sticky reply renders an "open in compose" button that fires this
+   * callback with a prefilled context (from + to + cc + subject) so the
+   * user can keep typing in the full editor — change sender identity,
+   * add a teammate to CC, attach files, etc.
+   */
+  onOpenCompose?: (prefill?: ComposePrefill) => void;
 }
 
 const BUBBLE_TRUNCATE_CHARS = 480;
@@ -366,6 +376,7 @@ export default function ChatInboxSection({
   onMarkRead,
   onDelete,
   onSent,
+  onOpenCompose,
 }: ChatInboxSectionProps) {
   // Chronological order — oldest at top, newest at bottom.
   const chronological = useMemo(
@@ -374,7 +385,10 @@ export default function ChatInboxSection({
   );
 
   // Group items by day for separators, and emit roster-diff notices
-  // between consecutive messages where the CC list changes.
+  // between consecutive messages where the *full* participant set
+  // changes — not just CC. Diffing CC alone produces false positives
+  // because the sender of a given message naturally isn't in their
+  // own CC, so every speaker rotation looked like "X removed · Y added".
   const items = useMemo(() => {
     const out: Array<
       | { kind: "day"; key: string; label: string }
@@ -388,40 +402,65 @@ export default function ChatInboxSection({
     > = [];
     let lastDay = "";
     let lastEmail: Email | null = null;
+    let lastRoster: Email["cc"] = [];
     for (const email of chronological) {
       const label = dayLabel(email.timestamp);
       if (label !== lastDay) {
         out.push({ kind: "day", key: `day-${label}-${email.id}`, label });
         lastDay = label;
       }
+      const nextRoster = rosterOf(email, senderResolver);
       if (lastEmail) {
-        const prevCc = lastEmail.cc ?? [];
-        const nextCc = email.cc ?? [];
-        const prevSet = new Set(prevCc.map((c) => c.email.toLowerCase()));
-        const nextSet = new Set(nextCc.map((c) => c.email.toLowerCase()));
-        const changed =
-          prevCc.length !== nextCc.length ||
-          [...prevSet].some((e) => !nextSet.has(e)) ||
-          [...nextSet].some((e) => !prevSet.has(e));
-        if (changed) {
+        const { joined, left } = diffRosters(lastRoster, nextRoster);
+        if (joined.length || left.length) {
           out.push({
             kind: "roster",
             key: `roster-${lastEmail.id}-${email.id}`,
-            prev: prevCc,
-            next: nextCc,
+            prev: lastRoster,
+            next: nextRoster,
           });
         }
       }
       out.push({ kind: "msg", email });
       lastEmail = email;
+      lastRoster = nextRoster;
     }
     return out;
-  }, [chronological]);
+  }, [chronological, senderResolver]);
 
   const replyTarget = useMemo(
     () => group.emails.find((e) => e.type === "received") ?? null,
     [group.emails],
   );
+
+  // Build the seed values for the full compose drawer. We pull the most
+  // recent received email's recipient list so switching to compose
+  // carries the original CC roster + subject through (minus our own
+  // inbox, which is "us" and would be redundant on the To/Cc lines).
+  const handleOpenInCompose = onOpenCompose
+    ? () => {
+        const sender = replyTarget
+          ? (senderResolver?.(replyTarget) ?? null)
+          : null;
+        const to =
+          sender?.email ?? replyTarget?.fromAddress ?? _personEmail ?? "";
+        const ownInbox = group.inbox.toLowerCase();
+        const cc = (replyTarget?.cc ?? []).filter(
+          (c) => c.email.toLowerCase() !== ownInbox,
+        );
+        const baseSubject = replyTarget?.subject ?? "";
+        const subject =
+          baseSubject && !/^re:\s/i.test(baseSubject)
+            ? `Re: ${baseSubject}`
+            : baseSubject;
+        onOpenCompose({
+          from: group.inbox,
+          to,
+          cc,
+          subject,
+        });
+      }
+    : undefined;
 
   // Scroll state for the messages pane
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -551,6 +590,7 @@ export default function ChatInboxSection({
           latestReceivedEmailId={replyTarget?.id ?? null}
           personEmail={_personEmail}
           onSent={onSent}
+          onOpenCompose={handleOpenInCompose}
         />
       </div>
     </div>

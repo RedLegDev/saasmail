@@ -16,12 +16,19 @@ import ThreadInboxSection, {
   type ThreadInboxGroup,
 } from "@/components/ThreadInboxSection";
 import ChatInboxSection from "@/components/ChatInboxSection";
+import type { ComposePrefill } from "@/pages/ComposeModal";
 
 interface ConversationDetailProps {
   conversation: GroupedConversation;
   refreshKey?: number;
   /** Domains we treat as "internal" for CC chip coloring. */
   internalDomains?: string[];
+  /**
+   * Called when the user clicks "open in full compose" inside a chat
+   * thread — the chat section computes a prefill (from + to + cc +
+   * subject) so the drawer opens with the reply context applied.
+   */
+  onOpenCompose?: (prefill?: ComposePrefill) => void;
 }
 
 function inboxLabel(email: string): string {
@@ -42,6 +49,7 @@ export default function ConversationDetail({
   conversation,
   refreshKey,
   internalDomains = [],
+  onOpenCompose,
 }: ConversationDetailProps) {
   const [data, setData] = useState<ConversationDetailData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -238,6 +246,7 @@ export default function ConversationDetail({
             onMarkRead={handleMarkRead}
             onDelete={handleDelete}
             onSent={refetch}
+            onOpenCompose={onOpenCompose}
           />
         ) : (
           <ThreadInboxSection

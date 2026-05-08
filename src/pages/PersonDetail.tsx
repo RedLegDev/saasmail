@@ -20,6 +20,7 @@ import ThreadInboxSection, {
   type ThreadInboxGroup,
 } from "@/components/ThreadInboxSection";
 import ChatInboxSection from "@/components/ChatInboxSection";
+import type { ComposePrefill } from "@/pages/ComposeModal";
 import { cn } from "@/lib/utils";
 
 interface PersonDetailProps {
@@ -27,6 +28,12 @@ interface PersonDetailProps {
   onEmailRead: (personId: string) => void;
   onEmailDelete: (personId: string, wasUnread: boolean) => void;
   refreshKey?: number;
+  /**
+   * Called when the user clicks "open in full compose" inside a chat
+   * thread — the chat section computes a prefill (from + to + cc +
+   * subject) so the drawer opens with the reply context applied.
+   */
+  onOpenCompose?: (prefill?: ComposePrefill) => void;
 }
 
 function inboxOf(email: Email): string {
@@ -93,6 +100,7 @@ export default function PersonDetail({
   onEmailRead,
   onEmailDelete,
   refreshKey,
+  onOpenCompose,
 }: PersonDetailProps) {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
@@ -369,6 +377,7 @@ export default function PersonDetail({
                   onMarkRead={handleMarkRead}
                   onDelete={handleDelete}
                   onSent={refetchEmails}
+                  onOpenCompose={onOpenCompose}
                 />
               );
             }

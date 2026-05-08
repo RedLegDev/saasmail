@@ -6,9 +6,28 @@ import CcInput from "@/components/CcInput";
 import { sendEmail, fetchStats, type CcEntry } from "@/lib/api";
 import { getFromLabel } from "@/lib/format";
 
+/**
+ * Optional seed values applied when the compose drawer opens. Used by
+ * the chat-mode "open in compose" handoff so a user can switch from
+ * the bottom-of-thread quick reply to the full editor without losing
+ * context (sender, recipient, CC roster, subject).
+ *
+ * Any field omitted falls back to the drawer's regular default —
+ * `from` defaults to the user's first inbox; `to`/`cc`/`subject`/`bodyHtml`
+ * default to empty.
+ */
+export interface ComposePrefill {
+  from?: string;
+  to?: string;
+  cc?: CcEntry[];
+  subject?: string;
+  bodyHtml?: string;
+}
+
 interface ComposeModalProps {
   open: boolean;
   onClose: () => void;
+  prefill?: ComposePrefill | null;
 }
 
 /**
@@ -16,7 +35,11 @@ interface ComposeModalProps {
  * Single "Freeform" mode for now (no template support); structurally
  * mirrors the reply experience so the two feel like the same component.
  */
-export default function ComposeModal({ open, onClose }: ComposeModalProps) {
+export default function ComposeModal({
+  open,
+  onClose,
+  prefill,
+}: ComposeModalProps) {
   const [to, setTo] = useState("");
   const [fromAddress, setFromAddress] = useState("");
   const [cc, setCc] = useState<CcEntry[]>([]);
@@ -54,10 +77,21 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
       fetchStats().then((stats) => {
         setRecipients(stats.recipients);
         setSenderIdentities(stats.senderIdentities ?? []);
-        if (!fromAddress && stats.recipients.length > 0) {
+        // Prefill `from` wins; otherwise keep whatever was sticky from
+        // last open; finally fall back to the first inbox.
+        const want = prefill?.from;
+        if (want && stats.recipients.includes(want)) {
+          setFromAddress(want);
+        } else if (!fromAddress && stats.recipients.length > 0) {
           setFromAddress(stats.recipients[0]);
         }
       });
+      // Apply any seeded values up front. Fields the caller didn't
+      // specify stay empty — same as a fresh "Compose" click.
+      setTo(prefill?.to ?? "");
+      setCc(prefill?.cc ?? []);
+      setSubject(prefill?.subject ?? "");
+      setBodyHtml(prefill?.bodyHtml ?? "");
     } else {
       setTo("");
       setCc([]);
@@ -66,7 +100,10 @@ export default function ComposeModal({ open, onClose }: ComposeModalProps) {
       setSignatureHtml(null);
       setError("");
     }
-  }, [open]);
+    // We intentionally don't track `fromAddress` here — it's only used
+    // as a sticky fallback above, not as a trigger to re-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill]);
 
   // Whenever the From inbox or the loaded identity list changes, swap the
   // signature trail to match. Stays a separate state slot so the user's

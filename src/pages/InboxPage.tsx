@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useOutletContext } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
+import type { ComposePrefill } from "@/pages/ComposeModal";
+
 interface InboxOutletContext {
-  onCompose: () => void;
+  onCompose: (prefill?: ComposePrefill) => void;
 }
 import PersonList from "./PersonList";
 import PersonDetail from "./PersonDetail";
@@ -432,6 +434,7 @@ export default function InboxPage() {
                         : s.email.slice(at + 1).toLowerCase();
                     }) ?? []
                   }
+                  onOpenCompose={onCompose}
                 />
               </div>
             </div>
@@ -456,6 +459,7 @@ export default function InboxPage() {
                   onEmailRead={handleEmailRead}
                   onEmailDelete={handleEmailDelete}
                   refreshKey={refreshKey}
+                  onOpenCompose={onCompose}
                 />
               </div>
             </div>
@@ -578,6 +582,7 @@ export default function InboxPage() {
                             : s.email.slice(at + 1).toLowerCase();
                         }) ?? []
                       }
+                      onOpenCompose={onCompose}
                     />
                   </div>
                 </div>
@@ -596,6 +601,7 @@ export default function InboxPage() {
                       onEmailRead={handleEmailRead}
                       onEmailDelete={handleEmailDelete}
                       refreshKey={refreshKey}
+                      onOpenCompose={onCompose}
                     />
                   </div>
                 </div>
