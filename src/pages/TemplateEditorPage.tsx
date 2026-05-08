@@ -2,10 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft,
-  Check,
   ChevronDown,
   Code2,
-  Copy,
   Eye,
   Hash,
   Sparkles,
@@ -13,6 +11,13 @@ import {
 } from "lucide-react";
 import HtmlCodeEditor from "@/components/HtmlCodeEditor";
 import PageHeader, { PageContainer } from "@/components/PageHeader";
+import {
+  CodeBlock,
+  Field,
+  FORM_INPUT_CLASS,
+  PaneLabel,
+  SectionHeader,
+} from "@/components/PageForm";
 import { fetchTemplate, createTemplate, updateTemplate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -181,7 +186,7 @@ export default function TemplateEditorPage() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Welcome email"
                 required
-                className={INPUT_CLASS}
+                className={FORM_INPUT_CLASS}
               />
             </Field>
 
@@ -204,7 +209,7 @@ export default function TemplateEditorPage() {
                   disabled={isEdit}
                   required
                   className={cn(
-                    INPUT_CLASS,
+                    FORM_INPUT_CLASS,
                     "font-mono",
                     isEdit && "opacity-60",
                   )}
@@ -228,7 +233,7 @@ export default function TemplateEditorPage() {
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="Welcome, {{name}}!"
                   required
-                  className={INPUT_CLASS}
+                  className={FORM_INPUT_CLASS}
                 />
               </Field>
             </div>
@@ -332,64 +337,6 @@ export default function TemplateEditorPage() {
 }
 
 /* --------------------------------- helpers --------------------------------- */
-
-const INPUT_CLASS =
-  "h-10 w-full rounded-[6px] border border-border bg-bg-subtle px-3 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-text-primary/20 disabled:cursor-not-allowed";
-
-interface SectionHeaderProps {
-  icon: React.ElementType;
-  title: string;
-  subtitle?: React.ReactNode;
-}
-
-function SectionHeader({ icon: Icon, title, subtitle }: SectionHeaderProps) {
-  return (
-    <div className="flex items-start gap-2">
-      <Icon size={14} className="mt-0.5 shrink-0 text-text-tertiary" />
-      <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-        {subtitle && (
-          <p className="mt-0.5 text-xs font-light text-text-secondary">
-            {subtitle}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface FieldProps {
-  label: string;
-  hint?: React.ReactNode;
-  mono?: boolean;
-  children: React.ReactNode;
-}
-
-function Field({ label, hint, children }: FieldProps) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
-        {label}
-      </span>
-      {children}
-      {hint && (
-        <span className="mt-1.5 block text-[11px] font-light text-text-tertiary">
-          {hint}
-        </span>
-      )}
-    </label>
-  );
-}
-
-function PaneLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="shrink-0 border-b border-border bg-bg-subtle/40 px-3 py-1.5">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary">
-        {children}
-      </span>
-    </div>
-  );
-}
 
 interface ViewToggleProps {
   mode: ViewMode;
@@ -555,41 +502,5 @@ function ApiReferenceCard({
         </div>
       )}
     </section>
-  );
-}
-
-/* --- Code block with copy button. Single-line and multi-line variants. --- */
-
-function CodeBlock({ value, oneLine }: { value: string; oneLine?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
-  }
-  return (
-    <div className="relative">
-      <pre
-        className={cn(
-          "overflow-x-auto rounded-[6px] border border-border bg-bg-subtle/60 p-3 text-[11px] leading-relaxed text-text-secondary",
-          oneLine ? "whitespace-nowrap" : "whitespace-pre",
-        )}
-      >
-        <code className="font-mono">{value}</code>
-      </pre>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy"
-        className="absolute right-2 top-2 inline-flex h-6 items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 text-[10px] font-medium text-text-secondary transition-colors hover:bg-bg-muted hover:text-text-primary"
-      >
-        {copied ? <Check size={10} /> : <Copy size={10} />}
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
   );
 }
