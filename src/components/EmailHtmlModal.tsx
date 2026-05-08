@@ -104,6 +104,19 @@ export default function EmailHtmlModal({
     };
   }, [open, email?.id, email?.personId, email?.recipient, email?.fromAddress]);
 
+  // Older messages in the same thread, oldest → newest, excluding the
+  // focal message itself (it's already rendered as the modal body).
+  // Computed before the `if (!email) return null` early-return so the
+  // hook count stays constant across renders — crucial for Rules of
+  // Hooks. Returns [] when email is null.
+  const priorEmails = useMemo(() => {
+    if (!email) return [];
+    return threadEmails
+      .filter((e) => e.id !== email.id && e.timestamp <= email.timestamp)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }, [threadEmails, email]);
+  const hasThreadContext = priorEmails.length > 0;
+
   if (!email) return null;
 
   const isSent = email.type === "sent";
@@ -131,16 +144,6 @@ export default function EmailHtmlModal({
       ? (new DOMParser().parseFromString(email.bodyHtml, "text/html").body
           .textContent ?? "")
       : "");
-
-  // Older messages in the same thread, oldest → newest, excluding the
-  // focal message itself (it's already rendered as the modal body).
-  const priorEmails = useMemo(() => {
-    if (!email) return [];
-    return threadEmails
-      .filter((e) => e.id !== email.id && e.timestamp <= email.timestamp)
-      .sort((a, b) => a.timestamp - b.timestamp);
-  }, [threadEmails, email]);
-  const hasThreadContext = priorEmails.length > 0;
 
   async function handleCopy() {
     try {
