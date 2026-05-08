@@ -8884,6 +8884,57 @@ INSERT OR REPLACE INTO attachments (id, email_id, filename, content_type, size, 
   ('a_0092', 'e_0723', 'screenshot.png', 'image/png', 69, 'attachments/e_0723/a_0092/screenshot.png', NULL, CAST(strftime('%s','now') AS INTEGER)),
   ('a_0093', 'e_0770', 'invoice.pdf', 'application/pdf', 623, 'attachments/e_0770/a_0093/invoice.pdf', NULL, CAST(strftime('%s','now') AS INTEGER));
 
+INSERT OR REPLACE INTO email_templates (id, slug, name, subject, body_html, from_address, created_at, updated_at) VALUES
+  ('tpl_00', 'intro-followup', 'Intro · Following up', 'Following up on our chat', '<p>Hi {{name}},</p><p>Wanted to follow up on what we discussed and see if you had a chance to think it over.</p><p>Happy to dive deeper into anything that caught your eye — or just answer questions.</p><p>Cheers,<br/>The team</p>', 'sales@example.com', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('tpl_01', 're-engagement', 'Re-engagement · Long time no see', 'Long time no see, {{name}}', '<p>Hi {{name}},</p><p>It''s been a while! Things have moved a lot on our end and I thought you might be interested in what we''ve shipped recently.</p><p>If now''s a better time to chat, just hit reply.</p>', 'sales@example.com', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('tpl_02', 'pricing-info', 'Pricing · Plan options', 'Pricing details for {{name}}', '<p>Hi {{name}},</p><p>Putting together the plan options we discussed. Three tiers depending on volume — happy to walk through which makes sense for your team.</p><p>Quick call this week?</p>', 'sales@example.com', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('tpl_03', 'welcome-onboarding', 'Welcome · New customer', 'Welcome to the team, {{name}}', '<p>Hi {{name}},</p><p>Welcome aboard! We''re thrilled to have you using the platform.</p><p>A few things to get you started:</p><ul><li>Set up your first inbox under Settings</li><li>Invite your team members</li><li>Connect your domain so DKIM/SPF check out</li></ul><p>Reply if anything trips you up.</p>', 'hello@example.com', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('tpl_04', 'feature-launch', 'Product · New feature', 'Just shipped: {{feature}}', '<p>Hi {{name}},</p><p>Quick heads up — we just shipped {{feature}}. You''ll see it in your dashboard now.</p><p>Full details on the changelog. Reply if you hit any issues.</p>', NULL, CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('tpl_05', 'support-followup', 'Support · Follow-up', 'Following up on your support request', '<p>Hi {{name}},</p><p>Just checking in on the issue you flagged. Did our last reply resolve it on your end?</p><p>If you''re still stuck, ping back and we''ll dig in further.</p>', 'support@example.com', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('tpl_06', 'meeting-confirm', 'Meetings · Confirm', 'Confirming our call on {{date}}', '<p>Hi {{name}},</p><p>Confirming our call on {{date}} at {{time}}. Calendar invite is on the way.</p><p>If anything changes, let me know — happy to reschedule.</p>', 'hello@example.com', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER));
+
+INSERT OR REPLACE INTO sequences (id, name, steps, created_at, updated_at) VALUES
+  ('seq_outreach_v1', 'Outreach · Cold lead nurture', '[{"order":1,"templateSlug":"intro-followup","delayHours":0},{"order":2,"templateSlug":"re-engagement","delayHours":72},{"order":3,"templateSlug":"feature-launch","delayHours":168},{"order":4,"templateSlug":"meeting-confirm","delayHours":336}]', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('seq_onboarding_v1', 'Onboarding · New customer welcome', '[{"order":1,"templateSlug":"welcome-onboarding","delayHours":0},{"order":2,"templateSlug":"feature-launch","delayHours":48},{"order":3,"templateSlug":"support-followup","delayHours":168}]', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)),
+  ('seq_reactivation_v1', 'Reactivation · Win-back', '[{"order":1,"templateSlug":"re-engagement","delayHours":0},{"order":2,"templateSlug":"pricing-info","delayHours":120}]', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER));
+
+INSERT OR REPLACE INTO sequence_enrollments (id, sequence_id, person_id, status, variables, from_address, enrolled_at, cancelled_at) VALUES
+  ('enr_000', 'seq_outreach_v1', 'p_003', 'active', '{"name":"Emil Chen","email":"emil.chen@vandelay.imp","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'billing@example.com', (CAST(strftime('%s','now') AS INTEGER) - 432000), NULL),
+  ('enr_001', 'seq_onboarding_v1', 'p_g15', 'active', '{"name":"Ravi Menon","email":"ravi.menon@stark.industries","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'hello@example.com', (CAST(strftime('%s','now') AS INTEGER) - 259200), NULL),
+  ('enr_002', 'seq_reactivation_v1', 'p_g09', 'active', '{"name":"Priya Singh","email":"priya.singh@procurement.globex.io","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'sales@example.com', (CAST(strftime('%s','now') AS INTEGER) - 172800), NULL),
+  ('enr_003', 'seq_outreach_v1', 'p_039', 'active', '{"name":"Priya Volkov","email":"priya.volkov@tyrell.tech","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'hello@example.com', (CAST(strftime('%s','now') AS INTEGER) - 600), NULL),
+  ('enr_004', 'seq_reactivation_v1', 'p_041', 'completed', '{"name":"Zane Brennan","email":"zane.brennan@aperture.science","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'notifications@example.com', (CAST(strftime('%s','now') AS INTEGER) - 1209600), NULL),
+  ('enr_005', 'seq_onboarding_v1', 'p_053', 'completed', '{"name":"Diego Prince","email":"diego.prince@soylent.corp","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'hello@example.com', (CAST(strftime('%s','now') AS INTEGER) - 2592000), NULL),
+  ('enr_006', 'seq_outreach_v1', 'p_093', 'cancelled', '{"name":"Vera Rossi","email":"vera.rossi@initech.dev","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'notifications@example.com', (CAST(strftime('%s','now') AS INTEGER) - 691200), (CAST(strftime('%s','now') AS INTEGER) - 345600)),
+  ('enr_007', 'seq_onboarding_v1', 'p_089', 'cancelled', '{"name":"Wendy Patel","email":"wendy.patel@globex.io","feature":"improved keyboard shortcuts","date":"Friday","time":"11:00 AM PT"}', 'sales@example.com', (CAST(strftime('%s','now') AS INTEGER) - 3600), (CAST(strftime('%s','now') AS INTEGER) - 1800));
+
+INSERT OR REPLACE INTO sequence_emails (id, enrollment_id, step_order, template_slug, scheduled_at, status, sent_at, sent_email_id) VALUES
+  ('se_000', 'enr_000', 1, 'intro-followup', (CAST(strftime('%s','now') AS INTEGER) - 432000), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 432000), NULL),
+  ('se_001', 'enr_000', 2, 're-engagement', (CAST(strftime('%s','now') AS INTEGER) - 172800), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 172800), NULL),
+  ('se_002', 'enr_000', 3, 'feature-launch', (CAST(strftime('%s','now') AS INTEGER) - -172800), 'pending', NULL, NULL),
+  ('se_003', 'enr_000', 4, 'meeting-confirm', (CAST(strftime('%s','now') AS INTEGER) - -777600), 'pending', NULL, NULL),
+  ('se_004', 'enr_001', 1, 'welcome-onboarding', (CAST(strftime('%s','now') AS INTEGER) - 259200), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 259200), NULL),
+  ('se_005', 'enr_001', 2, 'feature-launch', (CAST(strftime('%s','now') AS INTEGER) - 86400), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 86400), NULL),
+  ('se_006', 'enr_001', 3, 'support-followup', (CAST(strftime('%s','now') AS INTEGER) - -345600), 'pending', NULL, NULL),
+  ('se_007', 'enr_002', 1, 're-engagement', (CAST(strftime('%s','now') AS INTEGER) - 172800), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 172800), NULL),
+  ('se_008', 'enr_002', 2, 'pricing-info', (CAST(strftime('%s','now') AS INTEGER) - -259200), 'pending', NULL, NULL),
+  ('se_009', 'enr_003', 1, 'intro-followup', (CAST(strftime('%s','now') AS INTEGER) - 600), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 600), NULL),
+  ('se_010', 'enr_003', 2, 're-engagement', (CAST(strftime('%s','now') AS INTEGER) - -258600), 'pending', NULL, NULL),
+  ('se_011', 'enr_003', 3, 'feature-launch', (CAST(strftime('%s','now') AS INTEGER) - -604200), 'pending', NULL, NULL),
+  ('se_012', 'enr_003', 4, 'meeting-confirm', (CAST(strftime('%s','now') AS INTEGER) - -1209000), 'pending', NULL, NULL),
+  ('se_013', 'enr_004', 1, 're-engagement', (CAST(strftime('%s','now') AS INTEGER) - 1209600), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 1209600), NULL),
+  ('se_014', 'enr_004', 2, 'pricing-info', (CAST(strftime('%s','now') AS INTEGER) - 777600), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 777600), NULL),
+  ('se_015', 'enr_005', 1, 'welcome-onboarding', (CAST(strftime('%s','now') AS INTEGER) - 2592000), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 2592000), NULL),
+  ('se_016', 'enr_005', 2, 'feature-launch', (CAST(strftime('%s','now') AS INTEGER) - 2419200), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 2419200), NULL),
+  ('se_017', 'enr_005', 3, 'support-followup', (CAST(strftime('%s','now') AS INTEGER) - 1987200), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 1987200), NULL),
+  ('se_018', 'enr_006', 1, 'intro-followup', (CAST(strftime('%s','now') AS INTEGER) - 691200), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 691200), NULL),
+  ('se_019', 'enr_006', 2, 're-engagement', (CAST(strftime('%s','now') AS INTEGER) - 432000), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 432000), NULL),
+  ('se_020', 'enr_006', 3, 'feature-launch', (CAST(strftime('%s','now') AS INTEGER) - 86400), 'cancelled', NULL, NULL),
+  ('se_021', 'enr_006', 4, 'meeting-confirm', (CAST(strftime('%s','now') AS INTEGER) - -518400), 'cancelled', NULL, NULL),
+  ('se_022', 'enr_007', 1, 'welcome-onboarding', (CAST(strftime('%s','now') AS INTEGER) - 3600), 'sent', (CAST(strftime('%s','now') AS INTEGER) - 3600), NULL),
+  ('se_023', 'enr_007', 2, 'feature-launch', (CAST(strftime('%s','now') AS INTEGER) - -169200), 'cancelled', NULL, NULL),
+  ('se_024', 'enr_007', 3, 'support-followup', (CAST(strftime('%s','now') AS INTEGER) - -601200), 'cancelled', NULL, NULL);
+
 UPDATE people SET
   last_email_at = COALESCE((SELECT MAX(received_at) FROM emails WHERE person_id = people.id), last_email_at),
   unread_count  = COALESCE((SELECT SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) FROM emails WHERE person_id = people.id), 0),

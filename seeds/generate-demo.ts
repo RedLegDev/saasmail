@@ -1596,6 +1596,346 @@ function buildGroupThreads(
 }
 
 // ---------------------------------------------------------------------------
+// Email templates + sequences
+// ---------------------------------------------------------------------------
+// Demo templates the operator can pick from in the reply composer +
+// sequence builder. Body HTML stays minimal (no inline styles) so the
+// SettingsPage / templates list renders cleanly. Variables follow the
+// {{name}} convention the interpolate helper expects.
+interface TemplateSeed {
+  slug: string;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  fromAddress: string | null;
+}
+
+const TEMPLATES: TemplateSeed[] = [
+  // Outreach / sales
+  {
+    slug: "intro-followup",
+    name: "Intro · Following up",
+    subject: "Following up on our chat",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>Wanted to follow up on what we discussed and see if you had a chance to think it over.</p>" +
+      "<p>Happy to dive deeper into anything that caught your eye — or just answer questions.</p>" +
+      "<p>Cheers,<br/>The team</p>",
+    fromAddress: "sales@example.com",
+  },
+  {
+    slug: "re-engagement",
+    name: "Re-engagement · Long time no see",
+    subject: "Long time no see, {{name}}",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>It's been a while! Things have moved a lot on our end and I thought you might be interested in what we've shipped recently.</p>" +
+      "<p>If now's a better time to chat, just hit reply.</p>",
+    fromAddress: "sales@example.com",
+  },
+  {
+    slug: "pricing-info",
+    name: "Pricing · Plan options",
+    subject: "Pricing details for {{name}}",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>Putting together the plan options we discussed. Three tiers depending on volume — happy to walk through which makes sense for your team.</p>" +
+      "<p>Quick call this week?</p>",
+    fromAddress: "sales@example.com",
+  },
+  // Onboarding / customer success
+  {
+    slug: "welcome-onboarding",
+    name: "Welcome · New customer",
+    subject: "Welcome to the team, {{name}}",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>Welcome aboard! We're thrilled to have you using the platform.</p>" +
+      "<p>A few things to get you started:</p>" +
+      "<ul><li>Set up your first inbox under Settings</li>" +
+      "<li>Invite your team members</li>" +
+      "<li>Connect your domain so DKIM/SPF check out</li></ul>" +
+      "<p>Reply if anything trips you up.</p>",
+    fromAddress: "hello@example.com",
+  },
+  {
+    slug: "feature-launch",
+    name: "Product · New feature",
+    subject: "Just shipped: {{feature}}",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>Quick heads up — we just shipped {{feature}}. You'll see it in your dashboard now.</p>" +
+      "<p>Full details on the changelog. Reply if you hit any issues.</p>",
+    fromAddress: null, // global, admin-only
+  },
+  // Support
+  {
+    slug: "support-followup",
+    name: "Support · Follow-up",
+    subject: "Following up on your support request",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>Just checking in on the issue you flagged. Did our last reply resolve it on your end?</p>" +
+      "<p>If you're still stuck, ping back and we'll dig in further.</p>",
+    fromAddress: "support@example.com",
+  },
+  // Meetings
+  {
+    slug: "meeting-confirm",
+    name: "Meetings · Confirm",
+    subject: "Confirming our call on {{date}}",
+    bodyHtml:
+      "<p>Hi {{name}},</p>" +
+      "<p>Confirming our call on {{date}} at {{time}}. Calendar invite is on the way.</p>" +
+      "<p>If anything changes, let me know — happy to reschedule.</p>",
+    fromAddress: "hello@example.com",
+  },
+];
+
+interface SequenceSeed {
+  id: string;
+  name: string;
+  steps: Array<{ order: number; templateSlug: string; delayHours: number }>;
+}
+
+// Three sequences cover the main use cases the UI exposes — a long
+// nurture, a short onboarding, and a 2-step reactivation. Together
+// they exercise multi-step rendering, mid-flight enrollment cancel,
+// and the "completed" branch.
+const SEQUENCES: SequenceSeed[] = [
+  {
+    id: "seq_outreach_v1",
+    name: "Outreach · Cold lead nurture",
+    steps: [
+      { order: 1, templateSlug: "intro-followup", delayHours: 0 },
+      { order: 2, templateSlug: "re-engagement", delayHours: 72 }, // day 3
+      { order: 3, templateSlug: "feature-launch", delayHours: 168 }, // day 7
+      { order: 4, templateSlug: "meeting-confirm", delayHours: 336 }, // day 14
+    ],
+  },
+  {
+    id: "seq_onboarding_v1",
+    name: "Onboarding · New customer welcome",
+    steps: [
+      { order: 1, templateSlug: "welcome-onboarding", delayHours: 0 },
+      { order: 2, templateSlug: "feature-launch", delayHours: 48 }, // day 2
+      { order: 3, templateSlug: "support-followup", delayHours: 168 }, // day 7
+    ],
+  },
+  {
+    id: "seq_reactivation_v1",
+    name: "Reactivation · Win-back",
+    steps: [
+      { order: 1, templateSlug: "re-engagement", delayHours: 0 },
+      { order: 2, templateSlug: "pricing-info", delayHours: 120 }, // day 5
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Sequence enrollments — pick a handful of seeded people and generate
+// enrollment + sequence_emails rows that cover every status the UI
+// branches on (active mid-flight, completed, cancelled, freshly
+// enrolled with all-pending). Each enrollment's `fromAddress` is one
+// of the person's known inboxes so the demo looks coherent.
+// ---------------------------------------------------------------------------
+interface EnrollmentSeed {
+  id: string;
+  sequenceId: string;
+  personId: string;
+  status: "active" | "completed" | "cancelled";
+  variables: Record<string, string>;
+  fromAddress: string;
+  enrolledOffsetSec: number; // seconds before "now"
+  cancelledOffsetSec: number | null;
+}
+
+interface SequenceEmailSeed {
+  id: string;
+  enrollmentId: string;
+  stepOrder: number;
+  templateSlug: string;
+  scheduledOffsetSec: number; // signed: positive = past (sent/cancelled), negative = future
+  status: "pending" | "queued" | "sent" | "cancelled" | "failed";
+  sentOffsetSec: number | null;
+}
+
+function buildSequenceData(people: Person[]): {
+  enrollments: EnrollmentSeed[];
+  sequenceEmails: SequenceEmailSeed[];
+} {
+  const enrollments: EnrollmentSeed[] = [];
+  const sequenceEmails: SequenceEmailSeed[] = [];
+  let enrId = 0;
+  let seId = 0;
+  const HOUR = 3600;
+
+  // Find a person who has at least one inbox in our INBOXES list. We
+  // need a real fromAddress for the enrollment, and we prefer the
+  // person's own correspondence inbox for realism.
+  function pickPersonWithInbox(predicate: (p: Person) => boolean): Person {
+    const pool = people.filter((p) => p.inboxes.length > 0 && predicate(p));
+    if (pool.length === 0) {
+      // Fall back to anyone with an inbox.
+      return people.find((p) => p.inboxes.length > 0)!;
+    }
+    return pick(pool);
+  }
+
+  function emit(
+    seq: SequenceSeed,
+    person: Person,
+    status: EnrollmentSeed["status"],
+    enrolledOffsetSec: number,
+    cancelledOffsetSec: number | null,
+  ) {
+    const fromAddress = pick(person.inboxes);
+    const id = `enr_${enrId.toString().padStart(3, "0")}`;
+    enrId++;
+    enrollments.push({
+      id,
+      sequenceId: seq.id,
+      personId: person.id,
+      status,
+      variables: {
+        name: person.name,
+        email: person.email,
+        feature: "improved keyboard shortcuts",
+        date: "Friday",
+        time: "11:00 AM PT",
+      },
+      fromAddress,
+      enrolledOffsetSec,
+      cancelledOffsetSec,
+    });
+
+    // For each step, compute when it would have been scheduled and
+    // pick a status consistent with the enrollment's lifecycle.
+    for (const step of seq.steps) {
+      const stepOffsetSec = enrolledOffsetSec - step.delayHours * HOUR;
+      // stepOffsetSec > 0 means scheduled time is in the past; <= 0 means future.
+      let stepStatus: SequenceEmailSeed["status"];
+      let sentOffsetSec: number | null = null;
+      if (status === "completed") {
+        stepStatus = "sent";
+        sentOffsetSec = Math.max(stepOffsetSec, 1);
+      } else if (status === "cancelled") {
+        // Sent if the step was due before the enrollment was cancelled.
+        if (
+          cancelledOffsetSec !== null &&
+          stepOffsetSec >= cancelledOffsetSec
+        ) {
+          stepStatus = "sent";
+          sentOffsetSec = Math.max(stepOffsetSec, cancelledOffsetSec + 60);
+        } else {
+          stepStatus = "cancelled";
+        }
+      } else {
+        // Active. Sent for past-scheduled steps, pending for future.
+        if (stepOffsetSec > 0) {
+          stepStatus = "sent";
+          sentOffsetSec = stepOffsetSec;
+        } else {
+          stepStatus = "pending";
+        }
+      }
+      sequenceEmails.push({
+        id: `se_${seId.toString().padStart(3, "0")}`,
+        enrollmentId: id,
+        stepOrder: step.order,
+        templateSlug: step.templateSlug,
+        scheduledOffsetSec: stepOffsetSec,
+        status: stepStatus,
+        sentOffsetSec,
+      });
+      seId++;
+    }
+  }
+
+  // 1. Active outreach mid-flight — enrolled 5 days ago. Steps 1+2 sent,
+  //    steps 3+4 still pending (due day 7 / day 14).
+  emit(
+    SEQUENCES[0],
+    pickPersonWithInbox(() => true),
+    "active",
+    5 * 86400,
+    null,
+  );
+
+  // 2. Active onboarding — enrolled 3 days ago. Step 1 sent, step 2 sent,
+  //    step 3 pending (due day 7).
+  emit(
+    SEQUENCES[1],
+    pickPersonWithInbox((p) => p.inboxes.includes("hello@example.com")),
+    "active",
+    3 * 86400,
+    null,
+  );
+
+  // 3. Active reactivation, only the first email sent — enrolled 2 days
+  //    ago. Step 2 (day 5) still pending.
+  emit(
+    SEQUENCES[2],
+    pickPersonWithInbox(() => true),
+    "active",
+    2 * 86400,
+    null,
+  );
+
+  // 4. Freshly enrolled, just minutes ago — step 1 sent, rest pending.
+  emit(
+    SEQUENCES[0],
+    pickPersonWithInbox(() => true),
+    "active",
+    600, // 10 minutes ago
+    null,
+  );
+
+  // 5. Completed reactivation — enrolled 14 days ago, 2-step sequence
+  //    fully delivered.
+  emit(
+    SEQUENCES[2],
+    pickPersonWithInbox(() => true),
+    "completed",
+    14 * 86400,
+    null,
+  );
+
+  // 6. Completed onboarding — enrolled 30 days ago, all 3 steps sent.
+  emit(
+    SEQUENCES[1],
+    pickPersonWithInbox(() => true),
+    "completed",
+    30 * 86400,
+    null,
+  );
+
+  // 7. Cancelled outreach mid-flight — enrolled 8 days ago, cancelled
+  //    on day 4 (so steps 1+2 sent, steps 3+4 cancelled).
+  emit(
+    SEQUENCES[0],
+    pickPersonWithInbox(() => true),
+    "cancelled",
+    8 * 86400,
+    4 * 86400,
+  );
+
+  // 8. Cancelled before any send — enrolled 1 hour ago, cancelled
+  //    almost immediately. Step 1's scheduledAt happens to land before
+  //    the cancel by a few seconds, so it shows as sent; rest cancelled.
+  //    Demonstrates the "user changed their mind" path.
+  emit(
+    SEQUENCES[1],
+    pickPersonWithInbox(() => true),
+    "cancelled",
+    3600,
+    1800,
+  );
+
+  return { enrollments, sequenceEmails };
+}
+
+// ---------------------------------------------------------------------------
 // Render SQL
 // ---------------------------------------------------------------------------
 interface RenderResult {
@@ -1613,6 +1953,10 @@ interface RenderResult {
     groupPeople: number;
     groupThreads: number;
     groupMessages: number;
+    templates: number;
+    sequences: number;
+    enrollments: number;
+    sequenceEmails: number;
   };
 }
 
@@ -1630,6 +1974,10 @@ function renderSql(): RenderResult {
   const allPeople = [...people, ...group.groupPeople];
   for (const e of group.groupEmails) emails.push(e);
   for (const s of group.groupSent) sent.push(s);
+
+  // Sequence/enrollment data is built over the full person list so we
+  // can pick people who match real inboxes — keeps the demo coherent.
+  const seqData = buildSequenceData(allPeople);
 
   const lines: string[] = [];
 
@@ -1740,6 +2088,68 @@ function renderSql(): RenderResult {
     }
   }
 
+  // Email templates — small admin-curated library used in compose +
+  // sequences. Slugs are stable so the sequence step references work.
+  if (TEMPLATES.length > 0) {
+    lines.push(
+      "INSERT OR REPLACE INTO email_templates (id, slug, name, subject, body_html, from_address, created_at, updated_at) VALUES",
+    );
+    lines.push(
+      TEMPLATES.map(
+        (t, i) =>
+          `  ('tpl_${i.toString().padStart(2, "0")}', '${sqlEscape(t.slug)}', '${sqlEscape(t.name)}', '${sqlEscape(t.subject)}', '${sqlEscape(t.bodyHtml)}', ${t.fromAddress ? `'${t.fromAddress}'` : "NULL"}, CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER))`,
+      ).join(",\n") + ";",
+    );
+    lines.push("");
+  }
+
+  // Sequences — `steps` is stored as JSON in a TEXT column.
+  if (SEQUENCES.length > 0) {
+    lines.push(
+      "INSERT OR REPLACE INTO sequences (id, name, steps, created_at, updated_at) VALUES",
+    );
+    lines.push(
+      SEQUENCES.map(
+        (s) =>
+          `  ('${s.id}', '${sqlEscape(s.name)}', '${sqlEscape(JSON.stringify(s.steps))}', CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER))`,
+      ).join(",\n") + ";",
+    );
+    lines.push("");
+  }
+
+  // Sequence enrollments — variables stored as JSON. Negative offsets
+  // would land in the future (used for upcoming pending steps).
+  if (seqData.enrollments.length > 0) {
+    lines.push(
+      "INSERT OR REPLACE INTO sequence_enrollments (id, sequence_id, person_id, status, variables, from_address, enrolled_at, cancelled_at) VALUES",
+    );
+    lines.push(
+      seqData.enrollments
+        .map(
+          (e) =>
+            `  ('${e.id}', '${e.sequenceId}', '${e.personId}', '${e.status}', '${sqlEscape(JSON.stringify(e.variables))}', '${e.fromAddress}', (CAST(strftime('%s','now') AS INTEGER) - ${e.enrolledOffsetSec}), ${e.cancelledOffsetSec === null ? "NULL" : `(CAST(strftime('%s','now') AS INTEGER) - ${e.cancelledOffsetSec})`})`,
+        )
+        .join(",\n") + ";",
+    );
+    lines.push("");
+  }
+
+  // Sequence emails — one per step per enrollment.
+  if (seqData.sequenceEmails.length > 0) {
+    lines.push(
+      "INSERT OR REPLACE INTO sequence_emails (id, enrollment_id, step_order, template_slug, scheduled_at, status, sent_at, sent_email_id) VALUES",
+    );
+    lines.push(
+      seqData.sequenceEmails
+        .map(
+          (e) =>
+            `  ('${e.id}', '${e.enrollmentId}', ${e.stepOrder}, '${sqlEscape(e.templateSlug)}', (CAST(strftime('%s','now') AS INTEGER) - ${e.scheduledOffsetSec}), '${e.status}', ${e.sentOffsetSec === null ? "NULL" : `(CAST(strftime('%s','now') AS INTEGER) - ${e.sentOffsetSec})`}, NULL)`,
+        )
+        .join(",\n") + ";",
+    );
+    lines.push("");
+  }
+
   // Recompute aggregate columns on people from the emails we just inserted.
   lines.push("UPDATE people SET");
   lines.push(
@@ -1768,6 +2178,10 @@ function renderSql(): RenderResult {
       groupPeople: group.groupPeople.length,
       groupThreads: GROUP_THREADS.length,
       groupMessages: group.groupEmails.length + group.groupSent.length,
+      templates: TEMPLATES.length,
+      sequences: SEQUENCES.length,
+      enrollments: seqData.enrollments.length,
+      sequenceEmails: seqData.sequenceEmails.length,
     },
   };
 }
@@ -1818,6 +2232,9 @@ console.log(
 );
 console.log(
   `Group threads: ${result.stats.groupThreads} (${result.groupMessageCounts.join(" + ")} = ${result.stats.groupMessages} messages)`,
+);
+console.log(
+  `Templates: ${result.stats.templates} · Sequences: ${result.stats.sequences} (${result.stats.enrollments} enrollments, ${result.stats.sequenceEmails} scheduled emails)`,
 );
 console.log(
   `Group person ids: ${result.groupPersonIds[0]} .. ${result.groupPersonIds[result.groupPersonIds.length - 1]} (${result.stats.groupPeople} total)`,
