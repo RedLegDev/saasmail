@@ -2,20 +2,21 @@ import { Paperclip, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GroupedConversation } from "@/lib/api";
 
-// Solid palette for the stacked group avatars. Matches the *foreground*
-// hue of PersonList's soft pastel palette (so the colors are recognizable
-// per-person), but uses opaque backgrounds with white text — when avatars
-// overlap, semi-transparent backgrounds bleed through each other and the
-// stack reads as muddy patches. Solid colors keep the overlap crisp.
+// Solid palette for stacked group avatars — opaque equivalents of
+// PersonList's soft transparent palette (the rgba(_, 0.12-0.16) values
+// composited over a white card). Visually identical to the regular
+// person avatars when viewed solo; doesn't bleed into neighbors when
+// stacked because there's no transparency. Foreground colors mirror
+// PersonList's `fg` so the same person hashes to the same hue.
 const AVATAR_PALETTE = [
-  { bg: "#5b3ce6", fg: "#ffffff" }, // violet
-  { bg: "#15803d", fg: "#ffffff" }, // green
-  { bg: "#be185d", fg: "#ffffff" }, // pink
-  { bg: "#c2410c", fg: "#ffffff" }, // orange
-  { bg: "#0369a1", fg: "#ffffff" }, // blue
-  { bg: "#7e22ce", fg: "#ffffff" }, // purple
-  { bg: "#0f766e", fg: "#ffffff" }, // teal
-  { bg: "#a16207", fg: "#ffffff" }, // amber
+  { bg: "#efebff", fg: "#5b3ce6" }, // violet
+  { bg: "#e4f8ec", fg: "#15803d" }, // green
+  { bg: "#fdebf5", fg: "#be185d" }, // pink
+  { bg: "#fef0e4", fg: "#c2410c" }, // orange
+  { bg: "#e3f6fe", fg: "#0369a1" }, // blue
+  { bg: "#f3e7fe", fg: "#7e22ce" }, // purple
+  { bg: "#def5f3", fg: "#0f766e" }, // teal
+  { bg: "#fcf3d7", fg: "#a16207" }, // amber
 ];
 
 function avatarColor(seed: string) {

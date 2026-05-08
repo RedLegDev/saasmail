@@ -355,16 +355,19 @@ export default function PeopleTable({
 }
 
 // Solid palette for stacked group avatars — see GroupRow.tsx for the
-// rationale (transparent overlapping circles look muddy).
+// rationale (transparent overlapping circles look muddy). These are the
+// opaque equivalents of PersonList's rgba(_, 0.12-0.16) values
+// composited over a white card, so groups visually match the rest of
+// the avatars when viewed solo.
 const GROUP_AVATAR_PALETTE = [
-  { bg: "#5b3ce6", fg: "#ffffff" },
-  { bg: "#15803d", fg: "#ffffff" },
-  { bg: "#be185d", fg: "#ffffff" },
-  { bg: "#c2410c", fg: "#ffffff" },
-  { bg: "#0369a1", fg: "#ffffff" },
-  { bg: "#7e22ce", fg: "#ffffff" },
-  { bg: "#0f766e", fg: "#ffffff" },
-  { bg: "#a16207", fg: "#ffffff" },
+  { bg: "#efebff", fg: "#5b3ce6" },
+  { bg: "#e4f8ec", fg: "#15803d" },
+  { bg: "#fdebf5", fg: "#be185d" },
+  { bg: "#fef0e4", fg: "#c2410c" },
+  { bg: "#e3f6fe", fg: "#0369a1" },
+  { bg: "#f3e7fe", fg: "#7e22ce" },
+  { bg: "#def5f3", fg: "#0f766e" },
+  { bg: "#fcf3d7", fg: "#a16207" },
 ];
 function groupAvatarColor(seed: string) {
   let h = 0;
