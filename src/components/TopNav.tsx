@@ -12,7 +12,6 @@ import {
   Menu,
   User,
   LogOut,
-  EyeOff,
 } from "lucide-react";
 import { signOut, useSession } from "@/lib/auth-client";
 import {
@@ -22,11 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  HIDE_SIGNATURES_STORAGE_KEY,
-  HIDE_SIGNATURES_EVENT,
-  readHideSignatures,
-} from "@/lib/signatures";
+import { useBranding } from "@/lib/branding";
 
 interface NavItem {
   label: string;
@@ -45,13 +40,11 @@ const PRIMARY_NAV: NavItem[] = [
 
 export default function TopNav() {
   const { data: session } = useSession();
+  const { brandName } = useBranding();
   const navigate = useNavigate();
   const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [hideSignatures, setHideSignatures] = useState(() =>
-    readHideSignatures(),
-  );
 
   useEffect(() => {
     function onScroll() {
@@ -60,31 +53,6 @@ export default function TopNav() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  // Keep the toggle in sync if another tab flips it.
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === HIDE_SIGNATURES_STORAGE_KEY) {
-        setHideSignatures(readHideSignatures());
-      }
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  function toggleHideSignatures() {
-    const next = !hideSignatures;
-    setHideSignatures(next);
-    try {
-      window.localStorage.setItem(
-        HIDE_SIGNATURES_STORAGE_KEY,
-        next ? "1" : "0",
-      );
-    } catch {
-      /* non-fatal */
-    }
-    window.dispatchEvent(new CustomEvent(HIDE_SIGNATURES_EVENT));
-  }
 
   useEffect(() => {
     setMobileOpen(false);
@@ -100,7 +68,8 @@ export default function TopNav() {
         }`}
       >
         <div className="flex items-center justify-between px-2 py-1">
-          {/* Brand — Mail glyph in lime; keeps the SAASMAIL wordmark */}
+          {/* Brand — Mail glyph in lime; wordmark text comes from
+              app_settings (admin-editable) and falls back to "saasmail". */}
           <Link
             to="/"
             className="flex items-center gap-1.5 pl-2 text-base font-extrabold uppercase tracking-tight text-white transition-opacity duration-150 hover:opacity-80"
@@ -111,7 +80,7 @@ export default function TopNav() {
               style={{ color: "#BFFF00" }}
               aria-hidden
             />
-            saasmail
+            {brandName}
           </Link>
 
           {/* Primary nav (desktop) */}
@@ -178,32 +147,6 @@ export default function TopNav() {
                   <Key className="h-4 w-4" />
                   API keys
                 </DropdownMenuItem>
-                {/* Local-only display preference: hide trailing signatures
-                    from chat-mode bubbles so the feed stays scannable. */}
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    toggleHideSignatures();
-                  }}
-                  className="cursor-pointer"
-                  data-testid="hide-signatures-toggle"
-                >
-                  <EyeOff className="h-4 w-4" />
-                  <span className="flex-1">Hide signatures in chat</span>
-                  <span
-                    aria-checked={hideSignatures}
-                    role="checkbox"
-                    className={`flex h-4 w-7 items-center rounded-full p-0.5 transition-colors ${
-                      hideSignatures ? "bg-text-primary" : "bg-bg-muted"
-                    }`}
-                  >
-                    <span
-                      className={`h-3 w-3 rounded-full bg-white shadow transition-transform ${
-                        hideSignatures ? "translate-x-3" : "translate-x-0"
-                      }`}
-                    />
-                  </span>
-                </DropdownMenuItem>
                 {isAdmin && (
                   <>
                     <DropdownMenuItem
@@ -240,6 +183,9 @@ export default function TopNav() {
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
+                <p className="px-2 py-1 text-[10px] font-light text-text-tertiary">
+                  Signature visibility moved to Settings
+                </p>
                 <DropdownMenuItem
                   data-testid="logout-button"
                   onClick={() => signOut()}
