@@ -14,6 +14,11 @@ export const sentEmails = sqliteTable(
     messageId: text("message_id"),
     resendId: text("resend_id"),
     status: text("status").notNull().default("sent"),
+    /**
+     * JSON-encoded array of {"email","name"} objects for outbound CC
+     * recipients. NULL = no CC. Mirrors the `cc` column on `emails`.
+     */
+    cc: text("cc"),
     sentAt: integer("sent_at").notNull(),
     createdAt: integer("created_at").notNull(),
   },

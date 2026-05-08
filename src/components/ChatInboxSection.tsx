@@ -11,10 +11,13 @@ import {
 import type { Email } from "@/lib/api";
 import type { ThreadInboxGroup } from "@/components/ThreadInboxSection";
 import ChatQuickReply from "@/components/ChatQuickReply";
+import CcChips, { RosterDiffNotice } from "@/components/CcChips";
 
 interface ChatInboxSectionProps {
   group: ThreadInboxGroup;
   personEmail: string;
+  /** Domains we treat as "internal" for CC chip coloring. */
+  internalDomains?: string[];
   onOpenHtml: (email: Email) => void;
   onMarkRead: (email: Email) => void;
   onDelete: (emailId: string) => void;
@@ -54,12 +57,19 @@ function dayLabel(ts: number): string {
 
 interface BubbleProps {
   email: Email;
+  internalDomains?: string[];
   onOpenHtml: (email: Email) => void;
   onMarkRead: (email: Email) => void;
   onDelete: (emailId: string) => void;
 }
 
-function Bubble({ email, onOpenHtml, onMarkRead, onDelete }: BubbleProps) {
+function Bubble({
+  email,
+  internalDomains = [],
+  onOpenHtml,
+  onMarkRead,
+  onDelete,
+}: BubbleProps) {
   const [expanded, setExpanded] = useState(false);
   const isSent = email.type === "sent";
   const isUnread = email.type === "received" && email.isRead === 0;
@@ -118,6 +128,21 @@ function Bubble({ email, onOpenHtml, onMarkRead, onDelete }: BubbleProps) {
           </button>
         )}
       </div>
+
+      {/* CC chips — sit just below the bubble */}
+      {email.cc && email.cc.length > 0 && (
+        <div
+          className={`mt-1 flex max-w-[85%] sm:max-w-[78%] ${
+            isSent ? "justify-end" : "justify-start"
+          }`}
+        >
+          <CcChips
+            cc={email.cc}
+            internalDomains={internalDomains}
+            variant="compact"
+          />
+        </div>
+      )}
 
       {downloadable.length > 0 && (
         <div
@@ -205,6 +230,7 @@ function DaySeparator({ label }: DaySeparatorProps) {
 export default function ChatInboxSection({
   group,
   personEmail: _personEmail,
+  internalDomains = [],
   onOpenHtml,
   onMarkRead,
   onDelete,
@@ -216,20 +242,47 @@ export default function ChatInboxSection({
     [group.emails],
   );
 
-  // Group items by day for separators.
+  // Group items by day for separators, and emit roster-diff notices
+  // between consecutive messages where the CC list changes.
   const items = useMemo(() => {
     const out: Array<
       | { kind: "day"; key: string; label: string }
+      | {
+          kind: "roster";
+          key: string;
+          prev: Email["cc"];
+          next: Email["cc"];
+        }
       | { kind: "msg"; email: Email }
     > = [];
     let lastDay = "";
+    let lastEmail: Email | null = null;
     for (const email of chronological) {
       const label = dayLabel(email.timestamp);
       if (label !== lastDay) {
         out.push({ kind: "day", key: `day-${label}-${email.id}`, label });
         lastDay = label;
       }
+      if (lastEmail) {
+        const prevCc = lastEmail.cc ?? [];
+        const nextCc = email.cc ?? [];
+        const prevSet = new Set(prevCc.map((c) => c.email.toLowerCase()));
+        const nextSet = new Set(nextCc.map((c) => c.email.toLowerCase()));
+        const changed =
+          prevCc.length !== nextCc.length ||
+          [...prevSet].some((e) => !nextSet.has(e)) ||
+          [...nextSet].some((e) => !prevSet.has(e));
+        if (changed) {
+          out.push({
+            kind: "roster",
+            key: `roster-${lastEmail.id}-${email.id}`,
+            prev: prevCc,
+            next: nextCc,
+          });
+        }
+      }
       out.push({ kind: "msg", email });
+      lastEmail = email;
     }
     return out;
   }, [chronological]);
@@ -313,10 +366,18 @@ export default function ChatInboxSection({
           {items.map((item) =>
             item.kind === "day" ? (
               <DaySeparator key={item.key} label={item.label} />
+            ) : item.kind === "roster" ? (
+              <RosterDiffNotice
+                key={item.key}
+                prev={item.prev ?? []}
+                next={item.next ?? []}
+                internalDomains={internalDomains}
+              />
             ) : (
               <Bubble
                 key={item.email.id}
                 email={item.email}
+                internalDomains={internalDomains}
                 onOpenHtml={onOpenHtml}
                 onMarkRead={onMarkRead}
                 onDelete={onDelete}

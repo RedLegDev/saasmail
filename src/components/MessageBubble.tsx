@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import { Maximize2, Paperclip, Trash2 } from "lucide-react";
+import CcChips from "@/components/CcChips";
 import type { Email } from "@/lib/api";
 
 interface MessageBubbleProps {
   email: Email;
   personEmail: string;
+  /** Domains we treat as "internal" (matches our sender_identities). */
+  internalDomains?: string[];
   onOpenHtml: (email: Email) => void;
   onMarkRead: (email: Email) => void;
   onReply: (emailId: string) => void;
@@ -21,6 +24,7 @@ const TRUNCATE_LENGTH = MAX_LINES * APPROX_CHARS_PER_LINE;
 export default function MessageBubble({
   email,
   personEmail,
+  internalDomains = [],
   onOpenHtml,
   onMarkRead,
   onReply,
@@ -111,6 +115,13 @@ export default function MessageBubble({
         >
           {email.subject}
         </p>
+      )}
+
+      {/* CC chips — internal contacts get a lime accent */}
+      {email.cc && email.cc.length > 0 && (
+        <div className="mb-1">
+          <CcChips cc={email.cc} internalDomains={internalDomains} />
+        </div>
       )}
 
       {/* Body */}

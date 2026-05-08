@@ -15,6 +15,25 @@ export const emailsRouter = new OpenAPIHono<{
   Variables: Variables;
 }>();
 
+const CcEntrySchema = z.object({
+  email: z.string(),
+  name: z.string().nullable().optional(),
+});
+
+/** Parse a stored cc TEXT column (JSON) into a typed array, falling back to
+ *  [] for NULL or any malformed/corrupt JSON so a bad row never breaks reads. */
+function parseCc(
+  raw: string | null | undefined,
+): Array<{ email: string; name?: string | null }> {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 const EmailSchema = z.object({
   id: z.string(),
   type: z.enum(["received", "sent"]),
@@ -26,6 +45,7 @@ const EmailSchema = z.object({
   bodyHtml: z.string().nullable(),
   bodyText: z.string().nullable(),
   isRead: z.number().nullable(),
+  cc: z.array(CcEntrySchema),
   timestamp: z.number(),
   attachmentCount: z.number().optional(),
 });
@@ -94,6 +114,7 @@ emailsRouter.openapi(listPersonEmailsRoute, async (c) => {
       bodyHtml: emails.bodyHtml,
       bodyText: emails.bodyText,
       isRead: emails.isRead,
+      cc: emails.cc,
       timestamp: emails.receivedAt,
       recipient: emails.recipient,
     })
@@ -118,6 +139,7 @@ emailsRouter.openapi(listPersonEmailsRoute, async (c) => {
       subject: sentEmails.subject,
       bodyHtml: sentEmails.bodyHtml,
       bodyText: sentEmails.bodyText,
+      cc: sentEmails.cc,
       timestamp: sentEmails.sentAt,
       fromAddress: sentEmails.fromAddress,
       toAddress: sentEmails.toAddress,
@@ -139,6 +161,7 @@ emailsRouter.openapi(listPersonEmailsRoute, async (c) => {
       bodyHtml: e.bodyHtml,
       bodyText: e.bodyText,
       isRead: e.isRead,
+      cc: parseCc(e.cc),
       timestamp: e.timestamp,
     })),
     ...sent.map((e) => ({
@@ -152,6 +175,7 @@ emailsRouter.openapi(listPersonEmailsRoute, async (c) => {
       bodyHtml: e.bodyHtml,
       bodyText: e.bodyText,
       isRead: null,
+      cc: parseCc(e.cc),
       timestamp: e.timestamp,
     })),
   ].sort((a, b) => b.timestamp - a.timestamp);
@@ -285,6 +309,7 @@ emailsRouter.openapi(getEmailRoute, async (c) => {
       timestamp: row[0].receivedAt,
       fromAddress: null,
       toAddress: null,
+      cc: parseCc(row[0].cc),
       attachments: atts,
     },
     200,

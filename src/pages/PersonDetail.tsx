@@ -200,6 +200,17 @@ export default function PersonDetail({
     [inboxGroups],
   );
 
+  // Domains we own — used to flag internal vs external CC contacts.
+  // Pulled from sender_identities (the inboxes the operator has set up).
+  const internalDomains = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of senderIdentities) {
+      const at = s.email.lastIndexOf("@");
+      if (at >= 0) set.add(s.email.slice(at + 1).toLowerCase());
+    }
+    return Array.from(set);
+  }, [senderIdentities]);
+
   // Auto-pick the first (most-recent) inbox as active when person/emails load.
   useEffect(() => {
     if (inboxGroups.length === 0) {
@@ -353,6 +364,7 @@ export default function PersonDetail({
                   key={activeGroup.inbox}
                   group={activeGroup}
                   personEmail={person.email}
+                  internalDomains={internalDomains}
                   onOpenHtml={setHtmlPreviewEmail}
                   onMarkRead={handleMarkRead}
                   onDelete={handleDelete}
@@ -365,6 +377,7 @@ export default function PersonDetail({
                 <ThreadInboxSection
                   group={activeGroup}
                   personEmail={person.email}
+                  internalDomains={internalDomains}
                   isOlderExpanded={!!expandedOlder[activeGroup.inbox]}
                   onToggleOlder={() =>
                     setExpandedOlder((prev) => ({

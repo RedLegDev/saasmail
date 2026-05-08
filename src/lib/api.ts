@@ -21,6 +21,11 @@ export interface GroupedPerson {
   hasAttachment: number;
 }
 
+export interface CcEntry {
+  email: string;
+  name?: string | null;
+}
+
 export interface Email {
   id: string;
   type: "received" | "sent";
@@ -32,6 +37,7 @@ export interface Email {
   bodyHtml: string | null;
   bodyText: string | null;
   isRead: number | null;
+  cc: CcEntry[];
   timestamp: number;
   attachmentCount?: number;
   attachments?: Attachment[];

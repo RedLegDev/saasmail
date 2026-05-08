@@ -4,11 +4,13 @@
  *   - 100 people
  *   - 600-900 inbound emails (varied length, varied subject, ~25% unread)
  *   - 80-150 sent replies
+ *   - CC roster (~20% of emails) + 5 roster-change demo threads
+ *   - Attachments on ~15% of inbound emails (real fake fixtures)
  *
  * Run:  npx tsx seeds/generate-demo.ts
  * Then: yarn db:seed:dev
  */
-import { writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -198,6 +200,34 @@ const DOMAINS = [
   "aperture.science",
   "vandelay.imp",
   "orbis.health",
+];
+
+// ---------------------------------------------------------------------------
+// CC pools — internal team uses our own domain, external collaborators
+// pull from existing DOMAINS plus a couple of new business domains.
+// ---------------------------------------------------------------------------
+type CcEntry = { email: string; name?: string | null };
+
+const INTERNAL_TEAM: CcEntry[] = [
+  { email: "lin@example.com", name: "Lin Park" },
+  { email: "pavel@example.com", name: "Pavel Novak" },
+  { email: "maya@example.com", name: "Maya Iyer" },
+  { email: "diego@example.com", name: "Diego Cruz" },
+  { email: "ren@example.com", name: "Ren O'Brien" },
+  { email: "sam@example.com", name: "Sam Liu" },
+];
+
+const EXTERNAL_COLLABORATORS: CcEntry[] = [
+  { email: "carla.martinez@acme.co", name: "Carla Martinez" },
+  { email: "bob.schmidt@globex.io", name: "Bob Schmidt" },
+  { email: "rosa.garcia@initech.dev", name: "Rosa Garcia" },
+  { email: "henry.wayne@hooli.com", name: "Henry Wayne" },
+  { email: "kim.chen@piedpiper.ai", name: "Kim Chen" },
+  { email: "olivia.prince@stark.industries", name: "Olivia Prince" },
+  { email: "tariq.khan@legal.acme.co", name: "Tariq Khan" },
+  { email: "priya.singh@procurement.globex.io", name: "Priya Singh" },
+  { email: "marcus.cohen@northwind.co", name: "Marcus Cohen" },
+  { email: "yuki.sato@orbis.health", name: "Yuki Sato" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -482,6 +512,7 @@ interface Email {
   bodyText: string;
   isRead: 0 | 1;
   receivedOffsetSec: number;
+  cc?: CcEntry[];
 }
 
 interface SentReply {
@@ -494,13 +525,110 @@ interface SentReply {
   bodyText: string;
   inReplyTo: string | null;
   sentOffsetSec: number;
+  cc?: CcEntry[];
 }
 
-function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
+// ---------------------------------------------------------------------------
+// CC roster helpers
+// ---------------------------------------------------------------------------
+function pickCcRoster(): CcEntry[] {
+  // Choose 1-3 CCs. Most common: mix of one internal + one or two external.
+  // Sometimes all-external or all-internal.
+  const flavorRoll = rand();
+  const total = randInt(1, 3);
+  if (flavorRoll < 0.6) {
+    // Mix: 1 internal + (total-1) external (with at least 1 external).
+    const internalCount = Math.max(1, Math.min(1, total - 1));
+    const externalCount = total - internalCount;
+    return [
+      ...pickN(INTERNAL_TEAM, internalCount),
+      ...pickN(EXTERNAL_COLLABORATORS, externalCount),
+    ];
+  } else if (flavorRoll < 0.85) {
+    // All external.
+    return pickN(EXTERNAL_COLLABORATORS, total);
+  } else {
+    // All internal.
+    return pickN(INTERNAL_TEAM, Math.min(total, INTERNAL_TEAM.length));
+  }
+}
+
+function ccToJson(cc: CcEntry[]): string {
+  // Build JSON, then encode for SQL: single quotes inside JSON values
+  // (e.g. "Lin O'Brien") need to become '' in the SQL string literal.
+  const json = JSON.stringify(
+    cc.map((c) => ({ email: c.email, name: c.name ?? null })),
+  );
+  return `'${sqlEscape(json)}'`;
+}
+
+// ---------------------------------------------------------------------------
+// Attachments — small fake fixture files we ship in seeds/attachments/ and
+// upload to R2 via seeds/upload-attachments.sh.
+// ---------------------------------------------------------------------------
+interface AttachmentFixture {
+  filename: string;
+  contentType: string;
+}
+
+const ATTACHMENT_FIXTURES: AttachmentFixture[] = [
+  { filename: "invoice.pdf", contentType: "application/pdf" },
+  { filename: "screenshot.png", contentType: "image/png" },
+  { filename: "Q3-budget.csv", contentType: "text/csv" },
+  { filename: "meeting-notes.txt", contentType: "text/plain" },
+  {
+    filename: "roadmap.docx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  },
+  { filename: "logs.txt", contentType: "text/plain" },
+];
+
+interface Attachment {
+  id: string;
+  emailId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  r2Key: string;
+}
+
+function fixtureSize(filename: string): number {
+  // Resolve relative to this file regardless of cwd.
+  const dir = import.meta.dirname ?? new URL(".", import.meta.url).pathname;
+  return statSync(join(dir, "attachments", filename)).size;
+}
+
+function buildEmails(people: Person[]): {
+  emails: Email[];
+  sent: SentReply[];
+  attachments: Attachment[];
+  rosterChangePeopleIds: string[];
+} {
   const emails: Email[] = [];
   const sent: SentReply[] = [];
+  const attachments: Attachment[] = [];
   let eId = 0;
   let sId = 0;
+  let aId = 0;
+
+  // Pre-compute the 5 roster-change demo people: the FIRST 5 people whose
+  // total inbound count would be >= 3. We don't know inbound counts yet
+  // because they're determined inside this function, so we do a dry pass
+  // using the same RNG-free heuristic: a person is eligible if they have
+  // any inbox where the thread length >= 3. To keep this deterministic
+  // without disturbing the main RNG sequence we instead pick people whose
+  // inbox roster makes 3+ inbound likely (sum of inbox count >= 1 plus
+  // we'll re-check after generation). Simpler approach: do generation
+  // first, then assign roster changes to the first 5 eligible people in a
+  // post-pass that overwrites cc on their longest thread (so the rest of
+  // the RNG stream is preserved).
+
+  // Track threads as we generate, so the roster-change post-pass can find
+  // the longest thread per person without rescanning emails twice.
+  // threadIndex: personId -> inbox -> [emailId, emailId, ...]
+  const threads: Map<string, Map<string, string[]>> = new Map();
+
   for (const p of people) {
     for (const inbox of p.inboxes) {
       // Heavy-tailed thread length: most are 1-3, some 4-8, a few 9-15.
@@ -513,6 +641,7 @@ function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
       const isAutomated =
         inbox === "newsletter@example.com" ||
         inbox === "notifications@example.com";
+      const threadIds: string[] = [];
 
       for (let i = 0; i < threadLen; i++) {
         // Spread emails across the time the person has existed (max 60 days back).
@@ -546,8 +675,13 @@ function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
             ? 1
             : 0;
 
+        // ~20% chance this email has CCs (skip automated newsletter/
+        // notifications inboxes — those are blast lists, not conversations).
+        const cc = !isAutomated && chance(0.2) ? pickCcRoster() : undefined;
+
+        const emailId = `e_${eId.toString().padStart(4, "0")}`;
         emails.push({
-          id: `e_${eId.toString().padStart(4, "0")}`,
+          id: emailId,
           personId: p.id,
           recipient: inbox,
           subject,
@@ -555,9 +689,32 @@ function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
           bodyText: text,
           isRead,
           receivedOffsetSec: offsetSec,
+          cc,
         });
+        threadIds.push(emailId);
         eId++;
+
+        // ~15% chance of 1-2 attachments on inbound emails (skip automated).
+        if (!isAutomated && chance(0.15)) {
+          const attachCount = chance(0.7) ? 1 : 2;
+          const fixtures = pickN(ATTACHMENT_FIXTURES, attachCount);
+          for (const fix of fixtures) {
+            const attId = `a_${aId.toString().padStart(4, "0")}`;
+            attachments.push({
+              id: attId,
+              emailId,
+              filename: fix.filename,
+              contentType: fix.contentType,
+              size: fixtureSize(fix.filename),
+              r2Key: `attachments/${emailId}/${attId}/${fix.filename}`,
+            });
+            aId++;
+          }
+        }
       }
+
+      if (!threads.has(p.id)) threads.set(p.id, new Map());
+      threads.get(p.id)!.set(inbox, threadIds);
 
       // Sometimes seed a reply from us back to them (~30% of threads).
       if (!isAutomated && chance(0.3)) {
@@ -567,6 +724,8 @@ function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
           "Thanks for reaching out — I've looped in the right person on our side. Will follow up shortly with a more concrete answer.",
           randInt(30, 80),
         );
+        // Sent replies also get CCs ~20% of the time.
+        const sentCc = chance(0.2) ? pickCcRoster() : undefined;
         sent.push({
           id: `s_${sId.toString().padStart(4, "0")}`,
           personId: p.id,
@@ -580,20 +739,79 @@ function buildEmails(people: Person[]): { emails: Email[]; sent: SentReply[] } {
             lastEmail.receivedOffsetSec - replyOffsetSec,
             60,
           ),
+          cc: sentCc,
         });
         sId++;
       }
     }
   }
-  return { emails, sent };
+
+  // ---- Roster-change demo --------------------------------------------------
+  // Pick first 5 people in id order whose total inbound count >= 3, then
+  // overwrite cc on a single thread per person (the longest one with len >= 3)
+  // to demonstrate add/drop roster changes between consecutive messages.
+  const inboundCounts = new Map<string, number>();
+  for (const e of emails) {
+    inboundCounts.set(e.personId, (inboundCounts.get(e.personId) ?? 0) + 1);
+  }
+  const rosterChangePeopleIds: string[] = [];
+  for (const p of people) {
+    if (rosterChangePeopleIds.length >= 5) break;
+    if ((inboundCounts.get(p.id) ?? 0) < 3) continue;
+    const inboxThreads = threads.get(p.id);
+    if (!inboxThreads) continue;
+    // Find the longest thread for this person with len >= 3.
+    let bestInbox: string | null = null;
+    let bestLen = 0;
+    for (const [inbox, ids] of inboxThreads) {
+      if (ids.length >= 3 && ids.length > bestLen) {
+        bestInbox = inbox;
+        bestLen = ids.length;
+      }
+    }
+    if (!bestInbox) continue;
+    const ids = inboxThreads.get(bestInbox)!;
+    // Build a small roster change pattern: external1 alone, then add
+    // internal1, then drop internal1 (back to external1), and so on.
+    const ext1 = EXTERNAL_COLLABORATORS[0];
+    const ext2 = EXTERNAL_COLLABORATORS[1];
+    const int1 = INTERNAL_TEAM[0];
+    const int2 = INTERNAL_TEAM[1];
+    const rosters: CcEntry[][] = [
+      [ext1],
+      [ext1, int1],
+      [ext1],
+      [ext1, ext2, int1],
+      [ext1, ext2, int1, int2],
+      [ext1, ext2, int2],
+      [ext2, int2],
+      [int2],
+    ];
+    for (let i = 0; i < ids.length; i++) {
+      const target = emails.find((e) => e.id === ids[i]);
+      if (!target) continue;
+      target.cc = rosters[i % rosters.length];
+    }
+    rosterChangePeopleIds.push(p.id);
+  }
+
+  return { emails, sent, attachments, rosterChangePeopleIds };
 }
 
 // ---------------------------------------------------------------------------
 // Render SQL
 // ---------------------------------------------------------------------------
-function renderSql(): string {
+interface RenderResult {
+  sql: string;
+  attachments: Attachment[];
+  rosterChangePeopleIds: string[];
+  stats: { people: number; emails: number; sent: number; attachments: number };
+}
+
+function renderSql(): RenderResult {
   const people = buildPeople(100);
-  const { emails, sent } = buildEmails(people);
+  const { emails, sent, attachments, rosterChangePeopleIds } =
+    buildEmails(people);
 
   const lines: string[] = [];
 
@@ -602,7 +820,7 @@ function renderSql(): string {
   );
   lines.push("-- Run: yarn db:seed:dev (after re-running the generator).");
   lines.push(
-    `-- Stats: ${people.length} people, ${emails.length} emails, ${sent.length} sent replies.`,
+    `-- Stats: ${people.length} people, ${emails.length} emails, ${sent.length} sent replies, ${attachments.length} attachments.`,
   );
   lines.push("");
   lines.push("DELETE FROM sequence_emails;");
@@ -650,13 +868,13 @@ function renderSql(): string {
   for (let off = 0; off < emails.length; off += CHUNK) {
     const chunk = emails.slice(off, off + CHUNK);
     lines.push(
-      "INSERT OR REPLACE INTO emails (id, person_id, recipient, subject, body_html, body_text, raw_headers, message_id, spf, dkim, dmarc, is_read, received_at, created_at) VALUES",
+      "INSERT OR REPLACE INTO emails (id, person_id, recipient, subject, body_html, body_text, raw_headers, message_id, spf, dkim, dmarc, is_read, received_at, created_at, cc) VALUES",
     );
     lines.push(
       chunk
         .map(
           (e) =>
-            `  ('${e.id}', '${e.personId}', '${e.recipient}', '${sqlEscape(e.subject)}', '${e.bodyHtml}', '${sqlEscape(e.bodyText)}', '{}', '<${e.id}@example.test>', 'pass', 'pass', 'pass', ${e.isRead}, (CAST(strftime('%s','now') AS INTEGER) - ${e.receivedOffsetSec}), (CAST(strftime('%s','now') AS INTEGER) - ${e.receivedOffsetSec}))`,
+            `  ('${e.id}', '${e.personId}', '${e.recipient}', '${sqlEscape(e.subject)}', '${e.bodyHtml}', '${sqlEscape(e.bodyText)}', '{}', '<${e.id}@example.test>', 'pass', 'pass', 'pass', ${e.isRead}, (CAST(strftime('%s','now') AS INTEGER) - ${e.receivedOffsetSec}), (CAST(strftime('%s','now') AS INTEGER) - ${e.receivedOffsetSec}), ${e.cc ? ccToJson(e.cc) : "NULL"})`,
         )
         .join(",\n") + ";",
     );
@@ -668,13 +886,32 @@ function renderSql(): string {
     for (let off = 0; off < sent.length; off += CHUNK) {
       const chunk = sent.slice(off, off + CHUNK);
       lines.push(
-        "INSERT OR REPLACE INTO sent_emails (id, person_id, to_address, from_address, subject, body_html, body_text, in_reply_to, status, sent_at, created_at) VALUES",
+        "INSERT OR REPLACE INTO sent_emails (id, person_id, to_address, from_address, subject, body_html, body_text, in_reply_to, status, sent_at, created_at, cc) VALUES",
       );
       lines.push(
         chunk
           .map(
             (s) =>
-              `  ('${s.id}', '${s.personId}', '${sqlEscape(s.to)}', '${s.fromAddress}', '${sqlEscape(s.subject)}', '${s.bodyHtml}', '${sqlEscape(s.bodyText)}', ${s.inReplyTo ? `'${s.inReplyTo}'` : "NULL"}, 'sent', (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}), (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}))`,
+              `  ('${s.id}', '${s.personId}', '${sqlEscape(s.to)}', '${s.fromAddress}', '${sqlEscape(s.subject)}', '${s.bodyHtml}', '${sqlEscape(s.bodyText)}', ${s.inReplyTo ? `'${s.inReplyTo}'` : "NULL"}, 'sent', (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}), (CAST(strftime('%s','now') AS INTEGER) - ${s.sentOffsetSec}), ${s.cc ? ccToJson(s.cc) : "NULL"})`,
+          )
+          .join(",\n") + ";",
+      );
+      lines.push("");
+    }
+  }
+
+  // Attachments
+  if (attachments.length > 0) {
+    for (let off = 0; off < attachments.length; off += CHUNK) {
+      const chunk = attachments.slice(off, off + CHUNK);
+      lines.push(
+        "INSERT OR REPLACE INTO attachments (id, email_id, filename, content_type, size, r2_key, content_id, created_at) VALUES",
+      );
+      lines.push(
+        chunk
+          .map(
+            (a) =>
+              `  ('${a.id}', '${a.emailId}', '${sqlEscape(a.filename)}', '${sqlEscape(a.contentType)}', ${a.size}, '${sqlEscape(a.r2Key)}', NULL, CAST(strftime('%s','now') AS INTEGER))`,
           )
           .join(",\n") + ";",
       );
@@ -695,13 +932,63 @@ function renderSql(): string {
   );
   lines.push("");
 
+  return {
+    sql: lines.join("\n"),
+    attachments,
+    rosterChangePeopleIds,
+    stats: {
+      people: people.length,
+      emails: emails.length,
+      sent: sent.length,
+      attachments: attachments.length,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Render the upload script — a bash script that pushes every distinct
+// (r2_key, filename) pair to the local R2 bucket bound in wrangler.jsonc.
+// ---------------------------------------------------------------------------
+function renderUploadScript(attachments: Attachment[]): string {
+  const lines: string[] = [];
+  lines.push("#!/usr/bin/env bash");
+  lines.push("# AUTO-GENERATED by seeds/generate-demo.ts. Do not edit.");
+  lines.push("# Uploads demo attachments to the local R2 bucket.");
+  lines.push("set -e");
+  lines.push("");
+  lines.push("BUCKET=saasmail-attachments");
+  lines.push('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"');
+  lines.push("");
+  // Dedupe by r2_key — same key shouldn't be uploaded twice. r2_keys are
+  // already unique per (email, attachment) pair so this is just defensive.
+  const seen = new Set<string>();
+  for (const a of attachments) {
+    if (seen.has(a.r2Key)) continue;
+    seen.add(a.r2Key);
+    // We're calling wrangler from the repo root, so file=seeds/attachments/...
+    lines.push(
+      `npx wrangler r2 object put "$BUCKET/${a.r2Key}" --file="$SCRIPT_DIR/attachments/${a.filename}" --local`,
+    );
+  }
+  lines.push("");
+  lines.push('echo "Uploaded ${#}: $(echo $0)"');
+  lines.push("");
   return lines.join("\n");
 }
 
-const out = renderSql();
-const target = join(
-  import.meta.dirname ?? new URL(".", import.meta.url).pathname,
-  "demo.sql",
+const result = renderSql();
+const dir = import.meta.dirname ?? new URL(".", import.meta.url).pathname;
+const sqlTarget = join(dir, "demo.sql");
+writeFileSync(sqlTarget, result.sql);
+const uploadTarget = join(dir, "upload-attachments.sh");
+writeFileSync(uploadTarget, renderUploadScript(result.attachments));
+console.log(
+  `Wrote ${result.sql.length.toLocaleString()} chars to ${sqlTarget}`,
 );
-writeFileSync(target, out);
-console.log(`Wrote ${out.length.toLocaleString()} chars to ${target}`);
+console.log(`Wrote upload script to ${uploadTarget}`);
+console.log(
+  `Stats: ${result.stats.people} people, ${result.stats.emails} emails, ${result.stats.sent} sent, ${result.stats.attachments} attachments`,
+);
+console.log(
+  `Roster-change demo people: ${result.rosterChangePeopleIds.join(", ")}`,
+);

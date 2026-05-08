@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import { MessageSquare, Inbox } from "lucide-react";
 import MessageBubble from "@/components/MessageBubble";
+import { RosterDiffNotice } from "@/components/CcChips";
 import type { Email } from "@/lib/api";
 
 export interface ThreadInboxGroup {
@@ -11,6 +13,7 @@ export interface ThreadInboxGroup {
 interface ThreadInboxSectionProps {
   group: ThreadInboxGroup;
   personEmail: string;
+  internalDomains?: string[];
   isOlderExpanded: boolean;
   onToggleOlder: () => void;
   onOpenHtml: (email: Email) => void;
@@ -22,6 +25,7 @@ interface ThreadInboxSectionProps {
 export default function ThreadInboxSection({
   group,
   personEmail,
+  internalDomains = [],
   isOlderExpanded,
   onToggleOlder,
   onOpenHtml,
@@ -59,28 +63,53 @@ export default function ThreadInboxSection({
           </div>
         )}
         {isOlderExpanded &&
-          olderChronological.map((email) => (
+          olderChronological.map((email, idx) => {
+            const prev = olderChronological[idx - 1];
+            return (
+              <Fragment key={email.id}>
+                {prev && (
+                  <RosterDiffNotice
+                    prev={prev.cc ?? []}
+                    next={email.cc ?? []}
+                    internalDomains={internalDomains}
+                  />
+                )}
+                <MessageBubble
+                  email={email}
+                  personEmail={personEmail}
+                  internalDomains={internalDomains}
+                  onOpenHtml={onOpenHtml}
+                  onMarkRead={onMarkRead}
+                  onReply={onReply}
+                  onDelete={onDelete}
+                />
+              </Fragment>
+            );
+          })}
+        {latest && (
+          <Fragment>
+            {/* Roster diff between the last "older" email shown and the latest */}
+            {isOlderExpanded && olderChronological.length > 0 && (
+              <RosterDiffNotice
+                prev={
+                  olderChronological[olderChronological.length - 1].cc ?? []
+                }
+                next={latest.cc ?? []}
+                internalDomains={internalDomains}
+              />
+            )}
             <MessageBubble
-              key={email.id}
-              email={email}
+              key={latest.id}
+              email={latest}
               personEmail={personEmail}
+              internalDomains={internalDomains}
               onOpenHtml={onOpenHtml}
               onMarkRead={onMarkRead}
               onReply={onReply}
               onDelete={onDelete}
+              renderHtml
             />
-          ))}
-        {latest && (
-          <MessageBubble
-            key={latest.id}
-            email={latest}
-            personEmail={personEmail}
-            onOpenHtml={onOpenHtml}
-            onMarkRead={onMarkRead}
-            onReply={onReply}
-            onDelete={onDelete}
-            renderHtml
-          />
+          </Fragment>
         )}
       </div>
     </section>

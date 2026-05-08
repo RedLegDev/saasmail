@@ -15,6 +15,12 @@ export const emails = sqliteTable(
     dkim: text("dkim"),
     dmarc: text("dmarc"),
     isRead: integer("is_read").notNull().default(0),
+    /**
+     * JSON-encoded array of {"email","name"} objects for additional
+     * recipients on the inbound CC line. NULL = no CC. Stored as TEXT
+     * so we can keep the schema flat — see migration 0021 for rationale.
+     */
+    cc: text("cc"),
     receivedAt: integer("received_at").notNull(),
     createdAt: integer("created_at").notNull(),
   },
