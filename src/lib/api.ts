@@ -144,15 +144,42 @@ export async function fetchPerson(id: string): Promise<Person> {
   return apiFetch(`/api/people/${id}`);
 }
 
+export interface InboxAggregates {
+  /** Number of rows with at least one unread email in the filtered set. */
+  unreadRowCount: number;
+  /** Number of rows that have at least one downloadable attachment. */
+  attachmentRowCount: number;
+  /** Number of person rows that span 2+ inboxes (groups don't count). */
+  multiInboxRowCount: number;
+  /** Sum of unread email counts across the filtered set. */
+  totalUnreadEmails: number;
+}
+
 export interface PaginatedGroupedPeople {
-  /** Mixed list of person + group rows, sorted by recency. */
+  /** Mixed list of person + group rows, sorted by the requested key. */
   data: GroupedItem[];
+  /** Total rows in the filtered set (across all pages). */
   total: number;
   page: number;
   limit: number;
+  /** Aggregates over the *filtered* set so stat tiles don't lie when paged. */
+  aggregates: InboxAggregates;
 }
 
 export type InboxSort = "recency" | "unread" | "inbox" | "attachments";
+export type InboxSortDirection = "asc" | "desc";
+
+export interface InboxSortSpec {
+  key: InboxSort;
+  direction: InboxSortDirection;
+}
+
+/** The natural direction for each sort key. Recency/unread/attachments
+ *  default to desc (most recent / most unread / has-attachments-first);
+ *  inbox defaults to asc (alphabetical). */
+export function defaultDirectionFor(key: InboxSort): InboxSortDirection {
+  return key === "inbox" ? "asc" : "desc";
+}
 
 export async function fetchGroupedPeople(params?: {
   q?: string;
@@ -160,6 +187,8 @@ export async function fetchGroupedPeople(params?: {
   unread?: boolean;
   hasAttachment?: boolean;
   sort?: InboxSort;
+  /** Optional explicit direction. Server applies the natural default if omitted. */
+  direction?: InboxSortDirection;
   page?: number;
   limit?: number;
 }): Promise<PaginatedGroupedPeople> {
@@ -169,6 +198,15 @@ export async function fetchGroupedPeople(params?: {
   if (params?.unread) qs.set("unread", "1");
   if (params?.hasAttachment) qs.set("hasAttachment", "1");
   if (params?.sort && params.sort !== "recency") qs.set("sort", params.sort);
+  // Only send direction when it differs from the natural default —
+  // keeps the URL stable for the common case and avoids cache-busting.
+  if (
+    params?.sort &&
+    params?.direction &&
+    params.direction !== defaultDirectionFor(params.sort)
+  ) {
+    qs.set("direction", params.direction);
+  }
   if (params?.page) qs.set("page", params.page.toString());
   if (params?.limit) qs.set("limit", params.limit.toString());
   return apiFetch(`/api/people/grouped?${qs}`);

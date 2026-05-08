@@ -1,11 +1,22 @@
 import { useMemo } from "react";
-import { Paperclip, CheckCheck, Users, ArrowDown } from "lucide-react";
+import {
+  Paperclip,
+  CheckCheck,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  ArrowDown,
+  ArrowUp,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  GroupedItem,
-  GroupedPerson,
-  GroupedConversation,
-  InboxSort,
+import {
+  defaultDirectionFor,
+  type GroupedItem,
+  type GroupedPerson,
+  type GroupedConversation,
+  type InboxAggregates,
+  type InboxSort,
+  type InboxSortSpec,
 } from "@/lib/api";
 
 interface PeopleTableProps {
@@ -24,16 +35,28 @@ interface PeopleTableProps {
   onToggleSelectAll?: () => void;
   onMarkPersonRead?: (id: string) => void;
   onMarkConversationRead?: (id: string) => void;
-  /** Current sort + setter — column headers act as toggles. */
-  sort?: InboxSort;
-  onSortChange?: (sort: InboxSort) => void;
+  /** Active sort key + direction. Column headers act as toggles:
+   *  click the active key → flip direction; click another key →
+   *  switch to it with the natural default direction. */
+  sortSpec?: InboxSortSpec;
+  onSortChange?: (spec: InboxSortSpec) => void;
+  /** Pagination — total rows in the filtered set, current page, and
+   *  the page-size used by the parent to size each fetch. */
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
+  /** Aggregates over the *filtered* set so stat tiles show the truth
+   *  about the whole result, not just the visible page. */
+  aggregates?: InboxAggregates;
 }
 
 /**
- * Clickable column-header label. Shows a small down-arrow when its key
- * is the active sort. Clicking a non-active header switches to that
- * sort; clicking the active one is a no-op (we only sort one direction
- * server-side, recency is always the secondary tiebreaker).
+ * Clickable column-header label. Click toggles the sort direction
+ * when its key is the active sort; clicking a different column
+ * switches to that key with the natural default direction (recency/
+ * unread/attachments → desc, inbox → asc). The arrow flips ↑/↓ to
+ * match the active direction.
  */
 function SortHeader({
   label,
@@ -44,17 +67,28 @@ function SortHeader({
 }: {
   label: string;
   sortKey: InboxSort;
-  active: InboxSort | undefined;
-  onClick: ((s: InboxSort) => void) | undefined;
+  active: InboxSortSpec | undefined;
+  onClick: ((spec: InboxSortSpec) => void) | undefined;
   align?: "left" | "right";
 }) {
-  const isActive = active === sortKey;
+  const isActive = active?.key === sortKey;
   const clickable = !!onClick;
+  function handleClick() {
+    if (!onClick) return;
+    if (isActive && active) {
+      onClick({
+        key: sortKey,
+        direction: active.direction === "asc" ? "desc" : "asc",
+      });
+    } else {
+      onClick({ key: sortKey, direction: defaultDirectionFor(sortKey) });
+    }
+  }
   return (
     <button
       type="button"
       disabled={!clickable}
-      onClick={clickable ? () => onClick(sortKey) : undefined}
+      onClick={clickable ? handleClick : undefined}
       className={cn(
         "inline-flex items-center gap-1 transition-colors",
         align === "right" && "flex-row-reverse",
@@ -62,10 +96,20 @@ function SortHeader({
         isActive && "text-text-primary",
         !clickable && "cursor-default",
       )}
-      title={clickable ? `Sort by ${label.toLowerCase()}` : undefined}
+      title={
+        clickable
+          ? isActive
+            ? `Sort by ${label.toLowerCase()} — click to flip direction`
+            : `Sort by ${label.toLowerCase()}`
+          : undefined
+      }
     >
       <span>{label}</span>
-      {isActive && <ArrowDown size={10} className="shrink-0" aria-hidden />}
+      {isActive && active.direction === "asc" ? (
+        <ArrowUp size={10} className="shrink-0" aria-hidden />
+      ) : isActive ? (
+        <ArrowDown size={10} className="shrink-0" aria-hidden />
+      ) : null}
     </button>
   );
 }
@@ -155,40 +199,57 @@ export default function PeopleTable({
   onToggleSelectAll,
   onMarkPersonRead,
   onMarkConversationRead,
-  sort,
+  sortSpec,
   onSortChange,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  aggregates,
 }: PeopleTableProps) {
-  // Person rows used for the bulk-select header checkbox + the stats strip.
+  // Person rows used for the bulk-select header checkbox.
   // Group rows are still rendered, just not eligible for bulk selection
   // (groups have their own per-row mark-read button).
   const people = useMemo(
     () => items.filter((it): it is GroupedPerson => it.type === "person"),
     [items],
   );
+  // Stats reflect the *whole filtered set* via server aggregates when
+  // available — falling back to current-page counts only if the
+  // parent didn't pass them. The fallback keeps this component
+  // useful for callers that don't paginate.
   const stats = useMemo(() => {
+    if (aggregates && typeof total === "number") {
+      return {
+        total,
+        unread: aggregates.unreadRowCount,
+        withAttachments: aggregates.attachmentRowCount,
+        multiInbox: aggregates.multiInboxRowCount,
+      };
+    }
     let unread = 0;
     let withAttachments = 0;
     let multiInbox = 0;
     let groupCount = 0;
     for (const it of items) {
       if (it.type === "group") {
-        unread += it.unreadCount;
+        if (it.unreadCount > 0) unread++;
         if (it.hasAttachment === 1) withAttachments++;
         groupCount++;
         continue;
       }
-      unread += it.unreadCount;
+      if (it.unreadCount > 0) unread++;
       if (it.hasAttachment === 1) withAttachments++;
       if (it.recipientCount > 1) multiInbox++;
     }
+    void groupCount; // currently unused; kept for parity with prior behavior
     return {
       total: items.length,
-      groupCount,
       unread,
       withAttachments,
       multiInbox,
     };
-  }, [items]);
+  }, [items, aggregates, total]);
 
   // "All on page" = all persons selected AND all groups selected. Same
   // header checkbox flips both sets via onToggleSelectAll.
@@ -266,7 +327,7 @@ export default function PeopleTable({
                   <SortHeader
                     label="Inboxes"
                     sortKey="inbox"
-                    active={sort}
+                    active={sortSpec}
                     onClick={onSortChange}
                   />
                 </th>
@@ -274,7 +335,7 @@ export default function PeopleTable({
                   <SortHeader
                     label="Emails"
                     sortKey="attachments"
-                    active={sort}
+                    active={sortSpec}
                     onClick={onSortChange}
                     align="right"
                   />
@@ -283,7 +344,7 @@ export default function PeopleTable({
                   <SortHeader
                     label="Unread"
                     sortKey="unread"
-                    active={sort}
+                    active={sortSpec}
                     onClick={onSortChange}
                     align="right"
                   />
@@ -292,7 +353,7 @@ export default function PeopleTable({
                   <SortHeader
                     label="Last"
                     sortKey="recency"
-                    active={sort}
+                    active={sortSpec}
                     onClick={onSortChange}
                     align="right"
                   />
@@ -428,6 +489,74 @@ export default function PeopleTable({
           </table>
         )}
       </div>
+
+      {/* Pagination footer — only renders when the parent passes the
+          paging plumbing in. Mirrors PersonList's footer so list and
+          table view feel consistent. */}
+      {typeof total === "number" &&
+        typeof page === "number" &&
+        typeof pageSize === "number" &&
+        onPageChange && (
+          <PageFooter
+            total={total}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={onPageChange}
+            visibleCount={items.length}
+          />
+        )}
+    </div>
+  );
+}
+
+interface PageFooterProps {
+  total: number;
+  page: number;
+  pageSize: number;
+  visibleCount: number;
+  onPageChange: (page: number) => void;
+}
+
+function PageFooter({
+  total,
+  page,
+  pageSize,
+  visibleCount,
+  onPageChange,
+}: PageFooterProps) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(start + visibleCount - 1, total);
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-bg-subtle/40 px-4 py-2">
+      <span className="text-[11px] font-medium text-text-tertiary">
+        {total === 0
+          ? "No results"
+          : `Showing ${start}–${end} of ${total.toLocaleString()}`}
+      </span>
+      {totalPages > 1 && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onPageChange(Math.max(1, page - 1))}
+            disabled={page <= 1}
+            className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors hover:bg-bg-muted hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Previous page"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="text-[11px] font-medium text-text-tertiary tabular-nums">
+            {page} / {totalPages}
+          </span>
+          <button
+            onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+            disabled={page >= totalPages}
+            className="flex h-7 w-7 items-center justify-center rounded-[6px] text-text-secondary transition-colors hover:bg-bg-muted hover:text-text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Next page"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

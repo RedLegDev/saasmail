@@ -16,6 +16,7 @@ import InboxToolbar, {
 import PeopleTable from "@/components/PeopleTable";
 import SelectionBar from "@/components/SelectionBar";
 import {
+  defaultDirectionFor,
   fetchPerson,
   fetchStats,
   fetchGroupedPeople,
@@ -24,7 +25,9 @@ import {
   type GroupedItem,
   type GroupedPerson,
   type GroupedConversation,
+  type InboxAggregates,
   type InboxSort,
+  type InboxSortSpec,
   type Stats,
 } from "@/lib/api";
 import ConversationDetail from "./ConversationDetail";
@@ -49,29 +52,60 @@ export default function InboxPage() {
   const [peopleTotal, setPeopleTotal] = useState(0);
   const [peoplePage, setPeoplePage] = useState(1);
   const [peopleLoading, setPeopleLoading] = useState(true);
+  // Server-side aggregates over the *filtered* set so the table's
+  // stat tiles reflect the whole result, not just the visible page.
+  const [aggregates, setAggregates] = useState<InboxAggregates>({
+    unreadRowCount: 0,
+    attachmentRowCount: 0,
+    multiInboxRowCount: 0,
+    totalUnreadEmails: 0,
+  });
   const [stats, setStats] = useState<Stats | null>(null);
   const [filters, setFilters] = useState<InboxFilters>({});
   const [search, setSearch] = useState("");
   const [view, setView] = useState<InboxView>("list");
-  const [sort, setSort] = useState<InboxSort>(() => {
-    if (typeof window === "undefined") return "recency";
+  const [sortSpec, setSortSpec] = useState<InboxSortSpec>(() => {
+    // Persisted as JSON now ({key, direction}). For back-compat, also
+    // accept the legacy plain-string key form so users with an older
+    // saved value don't bounce back to "recency" on first load.
+    if (typeof window === "undefined")
+      return { key: "recency", direction: "desc" };
     const saved = window.localStorage?.getItem("saasmail.inboxSort");
+    if (!saved) return { key: "recency", direction: "desc" };
+    try {
+      const parsed = JSON.parse(saved);
+      if (
+        parsed &&
+        (parsed.key === "recency" ||
+          parsed.key === "unread" ||
+          parsed.key === "inbox" ||
+          parsed.key === "attachments") &&
+        (parsed.direction === "asc" || parsed.direction === "desc")
+      ) {
+        return parsed as InboxSortSpec;
+      }
+    } catch {
+      /* fallthrough — treat as legacy bare-key string */
+    }
     if (
       saved === "recency" ||
       saved === "unread" ||
       saved === "inbox" ||
       saved === "attachments"
     ) {
-      return saved;
+      return { key: saved as InboxSort, direction: defaultDirectionFor(saved) };
     }
-    return "recency";
+    return { key: "recency", direction: "desc" };
   });
 
   // Persist sort across reloads.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage?.setItem("saasmail.inboxSort", sort);
-  }, [sort]);
+    window.localStorage?.setItem(
+      "saasmail.inboxSort",
+      JSON.stringify(sortSpec),
+    );
+  }, [sortSpec]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedConversationIds, setSelectedConversationIds] = useState<
     Set<string>
@@ -82,10 +116,18 @@ export default function InboxPage() {
   // people list narrower (down to "just avatar + unread badge" mode).
   const { width: sidebarWidth, startDrag, isCompact } = useResizableSidebar();
 
-  // Reset to page 1 whenever the query inputs change.
+  // Reset to page 1 whenever the query inputs change. (Direction
+  // change keeps the page — the user usually wants to keep looking at
+  // the same window when they flip asc/desc.)
   useEffect(() => {
     setPeoplePage(1);
-  }, [search, filters.recipient, filters.unread, filters.hasAttachment, sort]);
+  }, [
+    search,
+    filters.recipient,
+    filters.unread,
+    filters.hasAttachment,
+    sortSpec.key,
+  ]);
 
   // Fetch the people list at the InboxPage level so both Table view
   // (PeopleTable) and List view (PersonList sidebar) see the same data.
@@ -100,13 +142,15 @@ export default function InboxPage() {
         recipient: filters.recipient,
         unread: filters.unread,
         hasAttachment: filters.hasAttachment,
-        sort,
+        sort: sortSpec.key,
+        direction: sortSpec.direction,
         page: peoplePage,
         limit: PEOPLE_PAGE_SIZE,
       })
         .then((res) => {
           setItems(res.data);
           setPeopleTotal(res.total);
+          setAggregates(res.aggregates);
         })
         .finally(() => setPeopleLoading(false));
     }, 200);
@@ -117,7 +161,8 @@ export default function InboxPage() {
     filters.recipient,
     filters.unread,
     filters.hasAttachment,
-    sort,
+    sortSpec.key,
+    sortSpec.direction,
   ]);
 
   const toggleSelected = useCallback((id: string) => {
@@ -369,8 +414,8 @@ export default function InboxPage() {
               setSelectedPerson(null);
               clearSelection();
             }}
-            sort={sort}
-            onSortChange={setSort}
+            sortSpec={sortSpec}
+            onSortChange={setSortSpec}
             onCompose={onCompose}
           />
         </div>
@@ -485,8 +530,13 @@ export default function InboxPage() {
                 onToggleSelectAll={toggleSelectAll}
                 onMarkPersonRead={handleMarkPersonRead}
                 onMarkConversationRead={handleMarkConversationRead}
-                sort={sort}
-                onSortChange={setSort}
+                sortSpec={sortSpec}
+                onSortChange={setSortSpec}
+                total={peopleTotal}
+                page={peoplePage}
+                pageSize={PEOPLE_PAGE_SIZE}
+                onPageChange={setPeoplePage}
+                aggregates={aggregates}
               />
             </div>
           )

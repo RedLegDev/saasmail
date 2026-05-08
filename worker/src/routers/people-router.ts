@@ -113,8 +113,12 @@ const listGroupedPeopleRoute = createRoute({
         .default("recency")
         .openapi({
           description:
-            "Sort order: recency (default, last email desc), unread (unread count desc, then recency), inbox (inbox asc, then recency), attachments (rows with attachments first, then recency).",
+            "Sort key. Direction is controlled by the separate `direction` param.",
         }),
+      direction: z.enum(["asc", "desc"]).optional().openapi({
+        description:
+          "Sort direction. When omitted, defaults to the natural direction for the chosen sort key (recency/unread/attachments default to desc; inbox defaults to asc).",
+      }),
       page: z.coerce.number().optional().default(1),
       limit: z.coerce.number().optional().default(50),
     }),
@@ -126,6 +130,19 @@ const listGroupedPeopleRoute = createRoute({
         total: z.number(),
         page: z.number(),
         limit: z.number(),
+        // Aggregates over the *filtered* set (not just the page) — power
+        // the stat tiles in table view so they reflect every row that
+        // matches the current filters, not just the 40 on screen.
+        aggregates: z.object({
+          unreadRowCount: z.number(),
+          attachmentRowCount: z.number(),
+          multiInboxRowCount: z.number(),
+          /**
+           * Sum of unread emails across the filtered set — useful for
+           * the navbar's "you have N unread" feel.
+           */
+          totalUnreadEmails: z.number(),
+        }),
       }),
       "Paginated list of grouped people + group conversations",
     ),
@@ -134,9 +151,15 @@ const listGroupedPeopleRoute = createRoute({
 
 peopleRouter.openapi(listGroupedPeopleRoute, async (c) => {
   const db = c.get("db");
-  const { q, recipient, unread, hasAttachment, sort, page, limit } =
+  const { q, recipient, unread, hasAttachment, sort, direction, page, limit } =
     c.req.valid("query");
   const offset = (page - 1) * limit;
+  // Resolve effective direction. Each sort key has a "natural" default
+  // (recency/unread/attachments → desc, inbox → asc) so the UI can
+  // pass `direction: undefined` to mean "use the natural one for this
+  // key". Explicit values from the client always win.
+  const naturalDirection: "asc" | "desc" = sort === "inbox" ? "asc" : "desc";
+  const effectiveDirection: "asc" | "desc" = direction ?? naturalDirection;
 
   const allowed = c.get("allowedInboxes")!;
 
@@ -454,43 +477,75 @@ peopleRouter.openapi(listGroupedPeopleRoute, async (c) => {
     });
   }
 
-  // Merge persons + groups, sort, paginate. The sort order is selected
-  // by the `sort` query param. Recency is the default tiebreaker so the
-  // user's mental "most recent first" model still holds within a sort.
+  // Merge persons + groups, sort, paginate. Recency is the secondary
+  // tiebreaker (most-recent first) for every sort except recency itself
+  // — the user's mental model is "newest first within the bucket".
+  // Direction flips only the *primary* key; the recency tiebreaker
+  // stays desc so newer items always come up first within a tie.
   type Row = (typeof personRows)[number] | (typeof groupRows)[number];
   const inboxOf = (r: Row): string =>
     r.type === "person" ? (r.recipients[0] ?? "") : r.inbox;
   const merged: Row[] = [...personRows, ...groupRows];
+  const sign = effectiveDirection === "asc" ? -1 : 1;
   switch (sort) {
     case "unread":
       merged.sort(
         (a, b) =>
-          b.unreadCount - a.unreadCount || b.lastEmailAt - a.lastEmailAt,
+          sign * (b.unreadCount - a.unreadCount) ||
+          b.lastEmailAt - a.lastEmailAt,
       );
       break;
     case "inbox":
       merged.sort((a, b) => {
         const ia = inboxOf(a).toLowerCase();
         const ib = inboxOf(b).toLowerCase();
-        if (ia !== ib) return ia.localeCompare(ib);
+        if (ia !== ib) return -sign * ia.localeCompare(ib);
         return b.lastEmailAt - a.lastEmailAt;
       });
       break;
     case "attachments":
       merged.sort(
         (a, b) =>
-          b.hasAttachment - a.hasAttachment || b.lastEmailAt - a.lastEmailAt,
+          sign * (b.hasAttachment - a.hasAttachment) ||
+          b.lastEmailAt - a.lastEmailAt,
       );
       break;
     case "recency":
     default:
-      merged.sort((a, b) => b.lastEmailAt - a.lastEmailAt);
+      merged.sort((a, b) => sign * (b.lastEmailAt - a.lastEmailAt));
       break;
   }
   const total = merged.length;
+  // Aggregate stats over the FILTERED set (not just the page). The
+  // table view's stat tiles read these so they don't lie when the
+  // result spans multiple pages.
+  let unreadRowCount = 0;
+  let attachmentRowCount = 0;
+  let multiInboxRowCount = 0;
+  let totalUnreadEmails = 0;
+  for (const r of merged) {
+    if (r.unreadCount > 0) unreadRowCount++;
+    if (r.hasAttachment === 1) attachmentRowCount++;
+    if (r.type === "person" && r.recipientCount > 1) multiInboxRowCount++;
+    totalUnreadEmails += r.unreadCount;
+  }
   const data = merged.slice(offset, offset + limit);
 
-  return c.json({ data, total, page, limit }, 200);
+  return c.json(
+    {
+      data,
+      total,
+      page,
+      limit,
+      aggregates: {
+        unreadRowCount,
+        attachmentRowCount,
+        multiInboxRowCount,
+        totalUnreadEmails,
+      },
+    },
+    200,
+  );
 });
 
 const listPeopleRoute = createRoute({
