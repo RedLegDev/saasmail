@@ -57,22 +57,25 @@ test.describe.serial("sequences CRUD", () => {
     //   "e.g., Welcome Sequence" → "Welcome onboarding".
     await page.getByPlaceholder("Welcome onboarding").fill("E2E Test Sequence");
 
-    // Step 1 is pre-populated — set template + delay. The template
-    // <option> labels now read "<name> · <slug>".
+    // Step 1 is pre-populated — set template + delay. Playwright's
+    // selectOption({label: ...}) only accepts strings, not regex, so
+    // we select by the option's `value` attribute (the template slug)
+    // which is unambiguous and immune to label-format tweaks like the
+    // recent "<name> · <slug>" change.
     const step1 = page.getByTestId(TEST_IDS.sequenceStepRow).nth(0);
-    await step1.locator("select").selectOption({ label: /^Welcome\b/ });
+    await step1.locator("select").selectOption("welcome");
     await step1.locator("input[type=number]").fill("0");
 
     // Add step 2. The button reads "Add step" (no leading "+").
     await page.getByRole("button", { name: "Add step" }).click();
     const step2 = page.getByTestId(TEST_IDS.sequenceStepRow).nth(1);
-    await step2.locator("select").selectOption({ label: /^Follow-up\b/ });
+    await step2.locator("select").selectOption("followup");
     await step2.locator("input[type=number]").fill("24");
 
     // Add step 3
     await page.getByRole("button", { name: "Add step" }).click();
     const step3 = page.getByTestId(TEST_IDS.sequenceStepRow).nth(2);
-    await step3.locator("select").selectOption({ label: /^Closing\b/ });
+    await step3.locator("select").selectOption("closing");
     await step3.locator("input[type=number]").fill("48");
 
     // Save (button reads "Create sequence" in new mode).
