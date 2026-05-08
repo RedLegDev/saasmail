@@ -107,6 +107,14 @@ const listGroupedPeopleRoute = createRoute({
         .enum(["1", "true"])
         .optional()
         .openapi({ description: "Only people with downloadable attachments" }),
+      sort: z
+        .enum(["recency", "unread", "inbox", "attachments"])
+        .optional()
+        .default("recency")
+        .openapi({
+          description:
+            "Sort order: recency (default, last email desc), unread (unread count desc, then recency), inbox (inbox asc, then recency), attachments (rows with attachments first, then recency).",
+        }),
       page: z.coerce.number().optional().default(1),
       limit: z.coerce.number().optional().default(50),
     }),
@@ -126,7 +134,7 @@ const listGroupedPeopleRoute = createRoute({
 
 peopleRouter.openapi(listGroupedPeopleRoute, async (c) => {
   const db = c.get("db");
-  const { q, recipient, unread, hasAttachment, page, limit } =
+  const { q, recipient, unread, hasAttachment, sort, page, limit } =
     c.req.valid("query");
   const offset = (page - 1) * limit;
 
@@ -446,12 +454,39 @@ peopleRouter.openapi(listGroupedPeopleRoute, async (c) => {
     });
   }
 
-  // Merge persons + groups, sort by lastEmailAt desc, paginate.
-  const merged: Array<
-    (typeof personRows)[number] | (typeof groupRows)[number]
-  > = [...personRows, ...groupRows].sort(
-    (a, b) => b.lastEmailAt - a.lastEmailAt,
-  );
+  // Merge persons + groups, sort, paginate. The sort order is selected
+  // by the `sort` query param. Recency is the default tiebreaker so the
+  // user's mental "most recent first" model still holds within a sort.
+  type Row = (typeof personRows)[number] | (typeof groupRows)[number];
+  const inboxOf = (r: Row): string =>
+    r.type === "person" ? (r.recipients[0] ?? "") : r.inbox;
+  const merged: Row[] = [...personRows, ...groupRows];
+  switch (sort) {
+    case "unread":
+      merged.sort(
+        (a, b) =>
+          b.unreadCount - a.unreadCount || b.lastEmailAt - a.lastEmailAt,
+      );
+      break;
+    case "inbox":
+      merged.sort((a, b) => {
+        const ia = inboxOf(a).toLowerCase();
+        const ib = inboxOf(b).toLowerCase();
+        if (ia !== ib) return ia.localeCompare(ib);
+        return b.lastEmailAt - a.lastEmailAt;
+      });
+      break;
+    case "attachments":
+      merged.sort(
+        (a, b) =>
+          b.hasAttachment - a.hasAttachment || b.lastEmailAt - a.lastEmailAt,
+      );
+      break;
+    case "recency":
+    default:
+      merged.sort((a, b) => b.lastEmailAt - a.lastEmailAt);
+      break;
+  }
   const total = merged.length;
   const data = merged.slice(offset, offset + limit);
 

@@ -1,21 +1,23 @@
 import { useMemo } from "react";
-import { Paperclip, CheckCheck } from "lucide-react";
+import { Paperclip, CheckCheck, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { GroupedItem, GroupedPerson } from "@/lib/api";
+import type {
+  GroupedItem,
+  GroupedPerson,
+  GroupedConversation,
+} from "@/lib/api";
 
 interface PeopleTableProps {
-  /**
-   * Mixed list — group rows are silently filtered out for now since the
-   * column-oriented table layout doesn't fit them well. Groups stay
-   * visible in List view.
-   */
+  /** Mixed list — both person and group rows render in the table. */
   items: GroupedItem[];
   loading?: boolean;
   onSelectPerson: (person: GroupedPerson) => void;
+  onSelectConversation?: (conv: GroupedConversation) => void;
   selectedIds?: Set<string>;
   onToggleSelected?: (id: string) => void;
   onToggleSelectAll?: () => void;
   onMarkPersonRead?: (id: string) => void;
+  onMarkConversationRead?: (id: string) => void;
 }
 
 const AVATAR_PALETTE = [
@@ -95,13 +97,16 @@ export default function PeopleTable({
   items,
   loading,
   onSelectPerson,
+  onSelectConversation,
   selectedIds,
   onToggleSelected,
   onToggleSelectAll,
   onMarkPersonRead,
+  onMarkConversationRead,
 }: PeopleTableProps) {
-  // Filter to person rows only — groups are surfaced in List view, where
-  // their overlapping-avatar treatment fits the layout.
+  // Person rows used for the bulk-select header checkbox + the stats strip.
+  // Group rows are still rendered, just not eligible for bulk selection
+  // (groups have their own per-row mark-read button).
   const people = useMemo(
     () => items.filter((it): it is GroupedPerson => it.type === "person"),
     [items],
@@ -110,18 +115,26 @@ export default function PeopleTable({
     let unread = 0;
     let withAttachments = 0;
     let multiInbox = 0;
-    for (const p of people) {
-      unread += p.unreadCount;
-      if (p.hasAttachment === 1) withAttachments++;
-      if (p.recipientCount > 1) multiInbox++;
+    let groupCount = 0;
+    for (const it of items) {
+      if (it.type === "group") {
+        unread += it.unreadCount;
+        if (it.hasAttachment === 1) withAttachments++;
+        groupCount++;
+        continue;
+      }
+      unread += it.unreadCount;
+      if (it.hasAttachment === 1) withAttachments++;
+      if (it.recipientCount > 1) multiInbox++;
     }
     return {
-      total: people.length,
+      total: items.length,
+      groupCount,
       unread,
       withAttachments,
       multiInbox,
     };
-  }, [people]);
+  }, [items]);
 
   const allOnPageSelected =
     people.length > 0 &&
@@ -149,7 +162,7 @@ export default function PeopleTable({
           <div className="flex h-full items-center justify-center text-sm text-text-tertiary">
             Loading…
           </div>
-        ) : people.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <p className="text-sm font-medium text-text-primary">
               No people match your filters
@@ -186,7 +199,19 @@ export default function PeopleTable({
               </tr>
             </thead>
             <tbody>
-              {people.map((person) => {
+              {items.map((item) => {
+                if (item.type === "group") {
+                  return (
+                    <GroupTableRow
+                      key={`g_${item.id}`}
+                      group={item}
+                      onSelect={() => onSelectConversation?.(item)}
+                      onMarkRead={onMarkConversationRead}
+                      hasCheckboxColumn={selectedIds !== undefined}
+                    />
+                  );
+                }
+                const person = item;
                 const color = avatarColor(person.email);
                 const isSelected = selectedIds?.has(person.id) ?? false;
                 return (
@@ -299,6 +324,146 @@ export default function PeopleTable({
         )}
       </div>
     </div>
+  );
+}
+
+interface GroupTableRowProps {
+  group: GroupedConversation;
+  onSelect: () => void;
+  onMarkRead?: (id: string) => void;
+  hasCheckboxColumn: boolean;
+}
+
+/**
+ * Table row for a group conversation. Avatar stack + comma-separated
+ * names in the Person column; the conversation's inbox in the Inboxes
+ * column. Bulk select skips groups (they have their own mark-read).
+ */
+function GroupTableRow({
+  group,
+  onSelect,
+  onMarkRead,
+  hasCheckboxColumn,
+}: GroupTableRowProps) {
+  const visible = group.participants.slice(0, 3);
+  const overflow = Math.max(0, group.participants.length - visible.length);
+  const AVATAR = 28;
+  const OVERLAP = 10;
+  const stackWidth =
+    AVATAR +
+    Math.max(0, visible.length + (overflow > 0 ? 1 : 0) - 1) *
+      (AVATAR - OVERLAP);
+  const namesLine = group.participants
+    .map((p) => {
+      if (p.name && p.name.trim()) return p.name.trim().split(/\s+/)[0];
+      return p.email.split("@")[0];
+    })
+    .slice(0, 4)
+    .join(", ");
+  const namesOverflow =
+    group.participants.length - Math.min(4, group.participants.length);
+
+  return (
+    <tr
+      onClick={onSelect}
+      className="group cursor-pointer border-b border-border/60 transition-colors hover:bg-text-primary/[0.025]"
+      data-testid="group-row"
+      data-conversation-id={group.id}
+    >
+      {hasCheckboxColumn && <td className="w-10 px-4 py-2.5" />}
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-3">
+          <span
+            className="relative shrink-0"
+            style={{ width: stackWidth, height: AVATAR }}
+          >
+            {visible.map((p, i) => {
+              const color = avatarColor(p.email);
+              return (
+                <span
+                  key={p.id}
+                  title={p.name || p.email}
+                  className="absolute flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold ring-2 ring-card"
+                  style={{
+                    backgroundColor: color.bg,
+                    color: color.fg,
+                    left: i * (AVATAR - OVERLAP),
+                    top: 0,
+                    zIndex: 10 - i,
+                  }}
+                >
+                  {initials(p.name, p.email)}
+                </span>
+              );
+            })}
+            {overflow > 0 && (
+              <span
+                className="absolute flex h-7 w-7 items-center justify-center rounded-full bg-bg-muted text-[10px] font-semibold text-text-secondary ring-2 ring-card"
+                style={{
+                  left: visible.length * (AVATAR - OVERLAP),
+                  top: 0,
+                  zIndex: 10 - visible.length,
+                }}
+                title={`+${overflow} more participants`}
+              >
+                +{overflow}
+              </span>
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 truncate text-sm font-medium text-text-primary">
+              <Users size={11} className="shrink-0 text-text-tertiary" />
+              <span className="truncate">
+                {namesLine}
+                {namesOverflow > 0 ? `, +${namesOverflow}` : ""}
+              </span>
+            </p>
+            <p className="truncate text-xs font-light text-text-tertiary">
+              {group.participants.length} participants
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-3 py-2.5">
+        <span
+          className="inline-flex items-center rounded-[5px] bg-bg-muted px-2 py-0.5 text-[11px] font-medium text-text-secondary"
+          title={group.inbox}
+        >
+          {group.inbox.split("@")[0]}
+        </span>
+      </td>
+      <td className="px-3 py-2.5 text-right">
+        <span className="inline-flex items-center gap-1.5 text-xs tabular-nums text-text-secondary">
+          {group.hasAttachment === 1 && (
+            <Paperclip size={11} className="text-text-tertiary" />
+          )}
+          {group.totalCount}
+        </span>
+      </td>
+      <td className="px-3 py-2.5 text-right">
+        {group.unreadCount > 0 ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMarkRead?.(group.id);
+            }}
+            title="Mark all as read"
+            className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums text-white transition-all hover:scale-110"
+            style={{ backgroundColor: "#7c5cfc" }}
+          >
+            {group.unreadCount}
+          </button>
+        ) : (
+          <span className="text-xs text-text-tertiary">—</span>
+        )}
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        <span className="text-xs font-light tabular-nums text-text-tertiary">
+          {relTime(group.lastEmailAt)}
+        </span>
+      </td>
+    </tr>
   );
 }
 

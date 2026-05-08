@@ -21,11 +21,14 @@ import {
   type GroupedItem,
   type GroupedPerson,
   type GroupedConversation,
+  type InboxSort,
   type Stats,
 } from "@/lib/api";
 import ConversationDetail from "./ConversationDetail";
 import { useSession } from "@/lib/auth-client";
 import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
+import { useResizableSidebar } from "@/hooks/useResizableSidebar";
+import { cn } from "@/lib/utils";
 import { PushOptInBanner } from "@/components/PushOptInBanner";
 import { isPushSupported, hasDismissedPrompt } from "@/lib/push";
 
@@ -47,18 +50,42 @@ export default function InboxPage() {
   const [filters, setFilters] = useState<InboxFilters>({});
   const [search, setSearch] = useState("");
   const [view, setView] = useState<InboxView>("list");
+  const [sort, setSort] = useState<InboxSort>(() => {
+    if (typeof window === "undefined") return "recency";
+    const saved = window.localStorage?.getItem("saasmail.inboxSort");
+    if (
+      saved === "recency" ||
+      saved === "unread" ||
+      saved === "inbox" ||
+      saved === "attachments"
+    ) {
+      return saved;
+    }
+    return "recency";
+  });
+
+  // Persist sort across reloads.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage?.setItem("saasmail.inboxSort", sort);
+  }, [sort]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Resizable sidebar — the user can drag the right edge to make the
+  // people list narrower (down to "just avatar + unread badge" mode).
+  const { width: sidebarWidth, startDrag, isCompact } = useResizableSidebar();
 
   // Reset to page 1 whenever the query inputs change.
   useEffect(() => {
     setPeoplePage(1);
-  }, [search, filters.recipient, filters.unread, filters.hasAttachment]);
+  }, [search, filters.recipient, filters.unread, filters.hasAttachment, sort]);
 
   // Fetch the people list at the InboxPage level so both Table view
   // (PeopleTable) and List view (PersonList sidebar) see the same data.
   // Previously the fetch lived inside PersonList, which meant Table view
   // showed an empty state because PersonList wasn't mounted.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setPeopleLoading(true);
     const t = setTimeout(() => {
@@ -67,6 +94,7 @@ export default function InboxPage() {
         recipient: filters.recipient,
         unread: filters.unread,
         hasAttachment: filters.hasAttachment,
+        sort,
         page: peoplePage,
         limit: PEOPLE_PAGE_SIZE,
       })
@@ -83,6 +111,7 @@ export default function InboxPage() {
     filters.recipient,
     filters.unread,
     filters.hasAttachment,
+    sort,
   ]);
 
   const toggleSelected = useCallback((id: string) => {
@@ -275,8 +304,10 @@ export default function InboxPage() {
           they're on the inbox, so no page title is needed.
           Hidden when a person is open in table view to keep the focus on
           the conversation. (Toggle stays accessible via the back button.) */}
-      {!(view === "table" && selectedPerson) && (
-        <div className={`mb-2 ${selectedPerson ? "hidden sm:block" : ""}`}>
+      {!(view === "table" && (selectedPerson || selectedConversation)) && (
+        <div
+          className={`mb-2 ${selectedPerson || selectedConversation ? "hidden sm:block" : ""}`}
+        >
           <InboxToolbar
             filters={filters}
             onFiltersChange={setFilters}
@@ -289,6 +320,8 @@ export default function InboxPage() {
               setSelectedPerson(null);
               clearSelection();
             }}
+            sort={sort}
+            onSortChange={setSort}
             onCompose={onCompose}
           />
         </div>
@@ -322,7 +355,38 @@ export default function InboxPage() {
 
       <div className="-mx-4 flex h-[calc(100vh-7rem)] min-h-[420px] flex-col overflow-hidden rounded-none bg-card shadow-sm ring-0 sm:mx-0 sm:rounded-[8px] sm:ring-1 sm:ring-border">
         {view === "table" ? (
-          selectedPerson ? (
+          selectedConversation ? (
+            // Table view + group open → full-width merged timeline.
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="flex shrink-0 items-center gap-3 border-b border-border bg-bg-subtle/60 px-4 py-2">
+                <button
+                  onClick={() => setSelectedConversation(null)}
+                  className="inline-flex items-center gap-1.5 rounded-[6px] px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-muted hover:text-text-primary"
+                >
+                  <ArrowLeft size={13} />
+                  Back to all
+                </button>
+                <span className="text-[11px] font-light text-text-tertiary">
+                  Viewing group ({selectedConversation.participants.length}{" "}
+                  participants)
+                </span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <ConversationDetail
+                  conversation={selectedConversation}
+                  refreshKey={refreshKey}
+                  internalDomains={
+                    stats?.senderIdentities?.map((s) => {
+                      const at = s.email.lastIndexOf("@");
+                      return at === -1
+                        ? ""
+                        : s.email.slice(at + 1).toLowerCase();
+                    }) ?? []
+                  }
+                />
+              </div>
+            </div>
+          ) : selectedPerson ? (
             // Table view + person open → full-width person detail.
             <div className="flex h-full min-h-0 flex-col">
               <div className="flex shrink-0 items-center gap-3 border-b border-border bg-bg-subtle/60 px-4 py-2">
@@ -357,6 +421,10 @@ export default function InboxPage() {
                   setSelectedConversation(null);
                   setSelectedPerson(p);
                 }}
+                onSelectConversation={(c) => {
+                  setSelectedPerson(null);
+                  setSelectedConversation(c);
+                }}
                 selectedIds={selectedIds}
                 onToggleSelected={toggleSelected}
                 onToggleSelectAll={toggleSelectAll}
@@ -368,11 +436,22 @@ export default function InboxPage() {
           // List view — sidebar + detail (or empty state).
           <div className="flex h-full min-h-0">
             <div
-              className={`w-full shrink-0 border-r border-border bg-bg-subtle md:w-96 ${
+              className={cn(
+                "relative shrink-0 border-r border-border bg-bg-subtle",
+                // Mobile: full-width when nothing selected, hidden when a
+                // person/conversation is open. Desktop: always shown,
+                // width controlled by the resize handle below.
                 selectedPerson || selectedConversation
                   ? "hidden md:block"
-                  : "block"
-              }`}
+                  : "block",
+                "w-full md:w-auto",
+              )}
+              style={{
+                width:
+                  typeof window !== "undefined" && window.innerWidth >= 768
+                    ? sidebarWidth
+                    : undefined,
+              }}
             >
               {showBanner && (
                 <PushOptInBanner onClose={() => setShowBanner(false)} />
@@ -402,7 +481,19 @@ export default function InboxPage() {
                 selectedIds={selectedIds}
                 onToggleSelected={toggleSelected}
                 onMarkPersonRead={handleMarkPersonRead}
+                compact={isCompact}
               />
+              {/* Drag handle — visible on hover, full-height column. */}
+              <div
+                onMouseDown={startDrag}
+                onTouchStart={startDrag}
+                role="separator"
+                aria-label="Resize sidebar"
+                aria-orientation="vertical"
+                className="absolute -right-1 top-0 z-20 hidden h-full w-2 cursor-col-resize items-center justify-center md:flex"
+              >
+                <span className="h-full w-px bg-transparent transition-colors group-hover:bg-text-primary/10 hover:bg-text-primary/20" />
+              </div>
             </div>
 
             <div

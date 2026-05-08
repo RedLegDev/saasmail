@@ -7,8 +7,10 @@ import {
   LayoutList,
   LayoutGrid,
   PenSquare,
+  ArrowUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { InboxSort } from "@/lib/api";
 
 export interface InboxFilters {
   recipient?: string;
@@ -31,8 +33,21 @@ interface InboxToolbarProps {
   onSearchChange: (q: string) => void;
   view: InboxView;
   onViewChange: (v: InboxView) => void;
+  sort: InboxSort;
+  onSortChange: (s: InboxSort) => void;
   /** Optional Compose button. Rendered to the right of the view toggle. */
   onCompose?: () => void;
+}
+
+const SORT_OPTIONS: Array<{ value: InboxSort; label: string }> = [
+  { value: "recency", label: "Most recent" },
+  { value: "unread", label: "Unread first" },
+  { value: "inbox", label: "By inbox" },
+  { value: "attachments", label: "Has attachments" },
+];
+
+function sortLabel(s: InboxSort): string {
+  return SORT_OPTIONS.find((o) => o.value === s)?.label ?? "Most recent";
 }
 
 function inboxOptionLabel(o: InboxOption) {
@@ -47,10 +62,14 @@ export default function InboxToolbar({
   onSearchChange,
   view,
   onViewChange,
+  sort,
+  onSortChange,
   onCompose,
 }: InboxToolbarProps) {
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const sortWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!inboxOpen) return;
@@ -60,6 +79,15 @@ export default function InboxToolbar({
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [inboxOpen]);
+
+  useEffect(() => {
+    if (!sortOpen) return;
+    function close(e: MouseEvent) {
+      if (!sortWrapRef.current?.contains(e.target as Node)) setSortOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [sortOpen]);
 
   const activeInbox = inboxes.find((i) => i.email === filters.recipient);
   const activeLabel = activeInbox
@@ -202,9 +230,49 @@ export default function InboxToolbar({
         </button>
       )}
 
+      <span className="ml-auto" />
+
+      {/* Sort dropdown — applies to both list + table views */}
+      <div ref={sortWrapRef} className="relative hidden sm:block">
+        <button
+          type="button"
+          onClick={() => setSortOpen((v) => !v)}
+          className="inline-flex h-7 items-center gap-1 rounded-[5px] px-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-muted hover:text-text-primary"
+          aria-label="Sort"
+        >
+          <ArrowUpDown size={11} />
+          <span className="hidden md:inline">{sortLabel(sort)}</span>
+          <ChevronDown size={11} className="opacity-60" />
+        </button>
+        {sortOpen && (
+          <div className="absolute right-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-[8px] border border-border bg-card py-1 shadow-lg">
+            {SORT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onSortChange(opt.value);
+                  setSortOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between px-3 py-2 text-xs transition-colors hover:bg-bg-muted",
+                  sort === opt.value && "bg-bg-subtle font-medium",
+                )}
+              >
+                <span>{opt.label}</span>
+                {sort === opt.value && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary">
+                    active
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* View toggle — pinned to the right edge. Hidden on mobile (the
           table view is unusable at narrow widths). */}
-      <span className="ml-auto" />
       <span className="mx-0.5 hidden h-4 w-px bg-border sm:block" aria-hidden />
       <div className="hidden h-7 rounded-[5px] bg-bg-muted/70 p-0.5 sm:inline-flex">
         <ViewToggleButton

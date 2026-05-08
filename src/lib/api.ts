@@ -148,11 +148,14 @@ export interface PaginatedGroupedPeople {
   limit: number;
 }
 
+export type InboxSort = "recency" | "unread" | "inbox" | "attachments";
+
 export async function fetchGroupedPeople(params?: {
   q?: string;
   recipient?: string;
   unread?: boolean;
   hasAttachment?: boolean;
+  sort?: InboxSort;
   page?: number;
   limit?: number;
 }): Promise<PaginatedGroupedPeople> {
@@ -161,6 +164,7 @@ export async function fetchGroupedPeople(params?: {
   if (params?.recipient) qs.set("recipient", params.recipient);
   if (params?.unread) qs.set("unread", "1");
   if (params?.hasAttachment) qs.set("hasAttachment", "1");
+  if (params?.sort && params.sort !== "recency") qs.set("sort", params.sort);
   if (params?.page) qs.set("page", params.page.toString());
   if (params?.limit) qs.set("limit", params.limit.toString());
   return apiFetch(`/api/people/grouped?${qs}`);
