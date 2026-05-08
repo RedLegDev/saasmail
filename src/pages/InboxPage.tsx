@@ -481,6 +481,8 @@ export default function InboxPage() {
                 onToggleSelectAll={toggleSelectAll}
                 onMarkPersonRead={handleMarkPersonRead}
                 onMarkConversationRead={handleMarkConversationRead}
+                sort={sort}
+                onSortChange={setSort}
               />
             </div>
           )

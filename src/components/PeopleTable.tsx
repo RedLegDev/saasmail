@@ -1,10 +1,11 @@
 import { useMemo } from "react";
-import { Paperclip, CheckCheck, Users } from "lucide-react";
+import { Paperclip, CheckCheck, Users, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   GroupedItem,
   GroupedPerson,
   GroupedConversation,
+  InboxSort,
 } from "@/lib/api";
 
 interface PeopleTableProps {
@@ -23,6 +24,50 @@ interface PeopleTableProps {
   onToggleSelectAll?: () => void;
   onMarkPersonRead?: (id: string) => void;
   onMarkConversationRead?: (id: string) => void;
+  /** Current sort + setter — column headers act as toggles. */
+  sort?: InboxSort;
+  onSortChange?: (sort: InboxSort) => void;
+}
+
+/**
+ * Clickable column-header label. Shows a small down-arrow when its key
+ * is the active sort. Clicking a non-active header switches to that
+ * sort; clicking the active one is a no-op (we only sort one direction
+ * server-side, recency is always the secondary tiebreaker).
+ */
+function SortHeader({
+  label,
+  sortKey,
+  active,
+  onClick,
+  align = "left",
+}: {
+  label: string;
+  sortKey: InboxSort;
+  active: InboxSort | undefined;
+  onClick: ((s: InboxSort) => void) | undefined;
+  align?: "left" | "right";
+}) {
+  const isActive = active === sortKey;
+  const clickable = !!onClick;
+  return (
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={clickable ? () => onClick(sortKey) : undefined}
+      className={cn(
+        "inline-flex items-center gap-1 transition-colors",
+        align === "right" && "flex-row-reverse",
+        clickable && "cursor-pointer hover:text-text-secondary",
+        isActive && "text-text-primary",
+        !clickable && "cursor-default",
+      )}
+      title={clickable ? `Sort by ${label.toLowerCase()}` : undefined}
+    >
+      <span>{label}</span>
+      {isActive && <ArrowDown size={10} className="shrink-0" aria-hidden />}
+    </button>
+  );
 }
 
 const AVATAR_PALETTE = [
@@ -110,6 +155,8 @@ export default function PeopleTable({
   onToggleSelectAll,
   onMarkPersonRead,
   onMarkConversationRead,
+  sort,
+  onSortChange,
 }: PeopleTableProps) {
   // Person rows used for the bulk-select header checkbox + the stats strip.
   // Group rows are still rendered, just not eligible for bulk selection
@@ -215,10 +262,41 @@ export default function PeopleTable({
                   </th>
                 )}
                 <th className="px-4 py-2.5 font-semibold">Person</th>
-                <th className="px-3 py-2.5 font-semibold">Inboxes</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Emails</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Unread</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Last</th>
+                <th className="px-3 py-2.5 font-semibold">
+                  <SortHeader
+                    label="Inboxes"
+                    sortKey="inbox"
+                    active={sort}
+                    onClick={onSortChange}
+                  />
+                </th>
+                <th className="px-3 py-2.5 text-right font-semibold">
+                  <SortHeader
+                    label="Emails"
+                    sortKey="attachments"
+                    active={sort}
+                    onClick={onSortChange}
+                    align="right"
+                  />
+                </th>
+                <th className="px-3 py-2.5 text-right font-semibold">
+                  <SortHeader
+                    label="Unread"
+                    sortKey="unread"
+                    active={sort}
+                    onClick={onSortChange}
+                    align="right"
+                  />
+                </th>
+                <th className="px-3 py-2.5 text-right font-semibold">
+                  <SortHeader
+                    label="Last"
+                    sortKey="recency"
+                    active={sort}
+                    onClick={onSortChange}
+                    align="right"
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
