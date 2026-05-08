@@ -21,6 +21,8 @@ import ThreadInboxSection, {
 } from "@/components/ThreadInboxSection";
 import ChatInboxSection from "@/components/ChatInboxSection";
 import type { ComposePrefill } from "@/pages/ComposeModal";
+import { onEmailSent } from "@/lib/email-events";
+import { showToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 interface PersonDetailProps {
@@ -229,6 +231,42 @@ export default function PersonDetail({
       setActiveInbox(inboxGroups[0].inbox);
     }
   }, [inboxGroups, activeInbox]);
+
+  // Listen for the global "email sent" event so we can:
+  //   1) Refetch emails immediately — already happens via the existing
+  //      onSent callbacks in compose surfaces, but the event-based path
+  //      catches sends initiated from anywhere (FAB compose, chat
+  //      quick reply, reply drawer).
+  //   2) Auto-switch the active inbox tab when the user replied from a
+  //      different inbox than the one they were viewing — otherwise the
+  //      sent message lands in a tab they aren't looking at and they
+  //      have no clue what happened.
+  //   3) Toast the user so they have an artifact telling them where the
+  //      reply landed.
+  useEffect(() => {
+    const off = onEmailSent((detail) => {
+      // Always refetch — picks up the new sent_emails row.
+      refetchEmails();
+      const sentInbox = detail.fromAddress;
+      // We only act on this person's inbox tabs. Compose-from-FAB to a
+      // different person fires the same event but isn't relevant here.
+      const isOurInbox = distinctInboxes.includes(sentInbox);
+      if (!isOurInbox) return;
+      const previous = activeInbox;
+      if (previous && previous !== sentInbox) {
+        setActiveInbox(sentInbox);
+        showToast({
+          kind: "info",
+          message: `Reply landed in ${inboxLabel(sentInbox)}`,
+          description: `You were viewing ${inboxLabel(previous)} — switched tabs so you can see it.`,
+          durationMs: 5500,
+        });
+      }
+    });
+    return off;
+    // We intentionally close over the latest activeInbox + inbox list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeInbox, distinctInboxes.join("|")]);
 
   const activeGroup =
     inboxGroups.find((g) => g.inbox === activeInbox) ?? inboxGroups[0] ?? null;

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Maximize2 } from "lucide-react";
 import { replyToEmail, sendEmail } from "@/lib/api";
+import { dispatchEmailSent } from "@/lib/email-events";
 
 interface ChatQuickReplyProps {
   inboxAddress: string; // From address, fixed to this section's inbox
@@ -80,6 +81,11 @@ export default function ChatQuickReply({
           bodyText: text,
         });
       }
+      dispatchEmailSent({
+        fromAddress: inboxAddress,
+        to: personEmail,
+        origin: "chat-quick-reply",
+      });
       setText("");
       onSent();
     } catch (e) {

@@ -17,6 +17,8 @@ import ThreadInboxSection, {
 } from "@/components/ThreadInboxSection";
 import ChatInboxSection from "@/components/ChatInboxSection";
 import type { ComposePrefill } from "@/pages/ComposeModal";
+import { onEmailSent } from "@/lib/email-events";
+import { showToast } from "@/lib/toast";
 
 interface ConversationDetailProps {
   conversation: GroupedConversation;
@@ -77,6 +79,30 @@ export default function ConversationDetail({
     if (refreshKey) refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
+
+  // Listen for email-sent events so we can refetch immediately and
+  // surface a toast if the user replied from a different inbox than
+  // this conversation. Group conversation_ids are keyed by
+  // (inbox, sorted-externals) — so a reply from a different inbox
+  // lives in an entirely different conversation; the user needs to
+  // know rather than wonder where their reply went.
+  useEffect(() => {
+    const off = onEmailSent((detail) => {
+      refetch();
+      if (
+        detail.fromAddress.toLowerCase() !== conversation.inbox.toLowerCase()
+      ) {
+        showToast({
+          kind: "warning",
+          message: `Reply went to ${inboxLabel(detail.fromAddress)}`,
+          description: `This thread is on ${inboxLabel(conversation.inbox)} — replies from another inbox start a new thread.`,
+          durationMs: 6500,
+        });
+      }
+    });
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.inbox, conversation.id]);
 
   useEffect(() => {
     fetchStats().then((stats) => {

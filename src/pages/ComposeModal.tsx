@@ -9,6 +9,7 @@ import {
   trayContentClass,
 } from "@/components/Tray";
 import { sendEmail, fetchStats, type CcEntry } from "@/lib/api";
+import { dispatchEmailSent } from "@/lib/email-events";
 import { getFromLabel } from "@/lib/format";
 
 /**
@@ -144,6 +145,7 @@ export default function ComposeModal({
         subject,
         bodyHtml: finalBody,
       });
+      dispatchEmailSent({ fromAddress, to, origin: "compose" });
       onClose();
     } catch {
       setError("Failed to send email");

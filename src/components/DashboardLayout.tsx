@@ -5,6 +5,7 @@ import Breadcrumbs from "@/components/Breadcrumbs";
 import Footer from "@/components/Footer";
 import ComposeFab from "@/components/ComposeFab";
 import ComposeModal, { type ComposePrefill } from "@/pages/ComposeModal";
+import Toaster from "@/components/Toaster";
 import { useReducedAnimations } from "@/hooks/useReducedAnimations";
 
 export default function DashboardLayout() {
@@ -59,6 +60,8 @@ export default function DashboardLayout() {
         onClose={closeCompose}
         prefill={composePrefill}
       />
+
+      <Toaster />
     </div>
   );
 }

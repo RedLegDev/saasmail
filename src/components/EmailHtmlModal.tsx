@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   X,
@@ -6,7 +6,10 @@ import {
   Download,
   Copy,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Inbox as InboxIcon,
+  MessageSquare,
   Send,
   FileText,
   Code,
@@ -17,7 +20,8 @@ import {
   TrayMetaRow,
   trayContentClass,
 } from "@/components/Tray";
-import type { Email } from "@/lib/api";
+import ThreadMessage from "@/components/ThreadMessage";
+import { fetchPersonEmails, type Email } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface EmailHtmlModalProps {
@@ -58,13 +62,47 @@ export default function EmailHtmlModal({
   const [view, setView] = useState<"rendered" | "plain">("rendered");
   const [copied, setCopied] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // Surrounding thread (oldest → newest, including the focal message
+  // we re-filter at render time). Always loadable so even chat-mode
+  // viewers can see prior messages without leaving the modal.
+  const [threadEmails, setThreadEmails] = useState<Email[]>([]);
+  const [threadExpanded, setThreadExpanded] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(false);
 
-  // Reset internal state when the email changes
+  // Reset internal state when the email changes.
   useMemo(() => {
     setView("rendered");
     setCopied(false);
     setFullscreen(false);
+    setThreadExpanded(false);
+    setThreadEmails([]);
   }, [email?.id]);
+
+  // Load the surrounding thread for this person + inbox when the
+  // modal opens. Same call ReplyComposer makes — the response gives
+  // us all received + sent emails for that person, scoped to the
+  // recipient inbox so we don't leak cross-inbox traffic.
+  useEffect(() => {
+    if (!open || !email?.personId) return;
+    let cancelled = false;
+    setThreadLoading(true);
+    const recipient = email.recipient ?? email.fromAddress ?? undefined;
+    fetchPersonEmails(email.personId, { recipient, limit: 25 })
+      .then((res) => {
+        if (cancelled) return;
+        setThreadEmails(res.emails);
+      })
+      .catch((err) => {
+        // Non-fatal — the body still renders fine without thread context.
+        console.warn("Failed to load thread context for view-original", err);
+      })
+      .finally(() => {
+        if (!cancelled) setThreadLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, email?.id, email?.personId, email?.recipient, email?.fromAddress]);
 
   if (!email) return null;
 
@@ -93,6 +131,16 @@ export default function EmailHtmlModal({
       ? (new DOMParser().parseFromString(email.bodyHtml, "text/html").body
           .textContent ?? "")
       : "");
+
+  // Older messages in the same thread, oldest → newest, excluding the
+  // focal message itself (it's already rendered as the modal body).
+  const priorEmails = useMemo(() => {
+    if (!email) return [];
+    return threadEmails
+      .filter((e) => e.id !== email.id && e.timestamp <= email.timestamp)
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }, [threadEmails, email]);
+  const hasThreadContext = priorEmails.length > 0;
 
   async function handleCopy() {
     try {
@@ -216,32 +264,60 @@ export default function EmailHtmlModal({
           )}
 
           {/* Body view toggle + actions */}
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-4 py-2 sm:px-5">
-            <div className="inline-flex rounded-[8px] bg-bg-muted/70 p-0.5 ring-1 ring-border">
-              <button
-                onClick={() => setView("rendered")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-xs font-medium transition-all",
-                  view === "rendered"
-                    ? "bg-card text-text-primary shadow-sm"
-                    : "text-text-secondary hover:text-text-primary",
-                )}
-              >
-                <FileText size={12} />
-                Rendered
-              </button>
-              <button
-                onClick={() => setView("plain")}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-xs font-medium transition-all",
-                  view === "plain"
-                    ? "bg-card text-text-primary shadow-sm"
-                    : "text-text-secondary hover:text-text-primary",
-                )}
-              >
-                <Code size={12} />
-                Plain text
-              </button>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2 sm:px-5">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex rounded-[8px] bg-bg-muted/70 p-0.5 ring-1 ring-border">
+                <button
+                  onClick={() => setView("rendered")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-xs font-medium transition-all",
+                    view === "rendered"
+                      ? "bg-card text-text-primary shadow-sm"
+                      : "text-text-secondary hover:text-text-primary",
+                  )}
+                >
+                  <FileText size={12} />
+                  Rendered
+                </button>
+                <button
+                  onClick={() => setView("plain")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-xs font-medium transition-all",
+                    view === "plain"
+                      ? "bg-card text-text-primary shadow-sm"
+                      : "text-text-secondary hover:text-text-primary",
+                  )}
+                >
+                  <Code size={12} />
+                  Plain text
+                </button>
+              </div>
+              {/* Thread expansion. Always available when this email is
+                  part of a person's thread — including from chat mode,
+                  per the user's "always make it possible" requirement. */}
+              {hasThreadContext && (
+                <button
+                  type="button"
+                  onClick={() => setThreadExpanded((v) => !v)}
+                  aria-expanded={threadExpanded}
+                  className="inline-flex items-center gap-1.5 rounded-[6px] border border-border bg-card px-2.5 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-muted hover:text-text-primary"
+                >
+                  <MessageSquare size={12} />
+                  {threadExpanded ? "Hide" : "Show"} {priorEmails.length}{" "}
+                  earlier
+                  {threadExpanded ? (
+                    <ChevronUp size={12} />
+                  ) : (
+                    <ChevronDown size={12} />
+                  )}
+                </button>
+              )}
+              {!hasThreadContext && threadLoading && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-light text-text-tertiary">
+                  <MessageSquare size={11} />
+                  Loading thread…
+                </span>
+              )}
             </div>
             <button
               onClick={handleCopy}
@@ -261,8 +337,32 @@ export default function EmailHtmlModal({
             </button>
           </div>
 
-          {/* Body */}
+          {/* Body — prior thread (when expanded) sits above the focal
+              message so older context flows naturally into the
+              current rendering. */}
           <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto bg-card">
+            {threadExpanded && hasThreadContext && (
+              <div className="border-b border-border bg-bg-subtle/30">
+                <div className="flex items-center gap-2 px-4 py-2 sm:px-5">
+                  <MessageSquare size={11} className="text-text-tertiary" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+                    {priorEmails.length} earlier message
+                    {priorEmails.length === 1 ? "" : "s"} in this thread
+                  </span>
+                </div>
+                <div className="divide-y divide-border/60">
+                  {priorEmails.map((e) => (
+                    <ThreadMessage key={e.id} email={e} muted />
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 border-t border-border bg-card px-4 py-2 sm:px-5">
+                  <ChevronDown size={11} className="text-text-tertiary" />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+                    This message
+                  </span>
+                </div>
+              </div>
+            )}
             {view === "rendered" && email.bodyHtml ? (
               <div
                 className="prose prose-sm max-w-none px-5 py-4 text-text-primary [&_a]:text-violet [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-text-secondary [&_p]:my-2 sm:px-7 sm:py-5"

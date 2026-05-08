@@ -6,12 +6,12 @@ import {
   Reply as ReplyIcon,
   FileText,
   Sparkles,
-  Inbox as InboxIcon,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 import TiptapEditor from "@/components/TiptapEditor";
 import CcInput from "@/components/CcInput";
+import ThreadMessage from "@/components/ThreadMessage";
 import {
   TrayMaximizeButton,
   TrayMetaRow,
@@ -26,7 +26,7 @@ import {
   type Email,
   type CcEntry,
 } from "@/lib/api";
-import { sanitizeEmailHtml } from "@/lib/sanitize-html";
+import { dispatchEmailSent } from "@/lib/email-events";
 import { getFromLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -218,6 +218,14 @@ export default function ReplyComposer({
           ...(ccPayload ? { cc: ccPayload } : {}),
         });
       }
+      // Notify the rest of the app — PersonDetail uses this to
+      // auto-switch the active inbox tab when the user replied from a
+      // different inbox than the one they were viewing.
+      dispatchEmailSent({
+        fromAddress,
+        to: personEmail,
+        origin: "reply",
+      });
       onSent();
       onClose();
     } catch {
@@ -607,76 +615,6 @@ function ThreadContext({
           <ThreadMessage email={original} highlight />
         </div>
       </div>
-    </div>
-  );
-}
-
-interface ThreadMessageProps {
-  email: Email;
-  muted?: boolean;
-  highlight?: boolean;
-}
-
-function ThreadMessage({ email, muted, highlight }: ThreadMessageProps) {
-  const isSent = email.type === "sent";
-  const sender = isSent
-    ? `you (${email.fromAddress ?? "—"})`
-    : (email.fromAddress ?? "Unknown");
-  const recipient = isSent ? email.toAddress : email.recipient;
-  const ts = new Date(email.timestamp * 1000);
-  const fullStamp = `${ts.toLocaleDateString([], { month: "short", day: "numeric" })} · ${ts.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-
-  return (
-    <div
-      className={cn(
-        "px-4 py-3",
-        highlight ? "bg-card" : "bg-transparent",
-        muted && "opacity-90",
-      )}
-    >
-      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px]">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-            isSent
-              ? "bg-bg-muted text-text-secondary"
-              : "bg-violet/10 text-violet",
-          )}
-          style={!isSent ? { color: "#7c5cfc" } : undefined}
-        >
-          {isSent ? (
-            <>
-              <Send size={9} />
-              Sent
-            </>
-          ) : (
-            <>
-              <InboxIcon size={9} />
-              Received
-            </>
-          )}
-        </span>
-        <span className="truncate font-medium text-text-primary">{sender}</span>
-        {recipient && (
-          <span className="truncate text-text-tertiary">→ {recipient}</span>
-        )}
-        <span className="ml-auto shrink-0 text-text-tertiary">{fullStamp}</span>
-      </div>
-      {email.bodyHtml ? (
-        <div
-          className={cn(
-            "prose prose-sm max-w-none text-[13px] leading-relaxed [&_p]:my-1.5",
-            highlight ? "text-text-primary" : "text-text-secondary",
-          )}
-          dangerouslySetInnerHTML={{
-            __html: sanitizeEmailHtml(email.bodyHtml),
-          }}
-        />
-      ) : (
-        <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-relaxed text-text-secondary">
-          {email.bodyText || "(no text)"}
-        </pre>
-      )}
     </div>
   );
 }
