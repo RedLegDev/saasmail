@@ -13,4 +13,5 @@ export * from "./sequence-emails.schema";
 export * from "./sender-identities.schema";
 export * from "./inbox-permissions.schema";
 export * from "./push-subscriptions.schema";
+export * from "./app-settings.schema";
 export * from "./schema";
