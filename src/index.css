@@ -469,3 +469,17 @@ body {
   height: 0;
   pointer-events: none;
 }
+
+.notion-editor img,
+.notion-editor .notion-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75em 0;
+  border-radius: 6px;
+}
+
+.notion-editor img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent, #7c5cfc);
+  outline-offset: 2px;
+}

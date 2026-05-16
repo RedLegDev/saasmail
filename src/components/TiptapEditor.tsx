@@ -1,13 +1,71 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect } from "react";
+import Image from "@tiptap/extension-image";
+import { useEffect, useRef, useState } from "react";
 
 interface TiptapEditorProps {
   content: string;
   onUpdate: (html: string) => void;
   placeholder?: string;
   className?: string;
+  /** Override the default 2 MB per-image cap. */
+  maxImageBytes?: number;
+}
+
+const DEFAULT_MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+
+/** Read a File into a `data:image/...;base64,...` URL. */
+function readImageAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Convert image files into base64 data-URI <img> nodes and insert them
+ * at `pos` (or the current selection if pos is undefined). Returns an
+ * error message if any file was rejected (too big / not an image),
+ * else null. Files that pass are inserted even if a later sibling
+ * fails — partial success beats all-or-nothing.
+ */
+async function insertImageFiles(
+  editor: Editor,
+  files: File[],
+  maxBytes: number,
+  pos?: number,
+): Promise<string | null> {
+  let errMsg: string | null = null;
+  let insertPos = pos;
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) {
+      errMsg = `${file.name} isn't an image`;
+      continue;
+    }
+    if (file.size > maxBytes) {
+      const mb = (maxBytes / (1024 * 1024)).toFixed(1);
+      errMsg = `${file.name} exceeds the ${mb} MB limit`;
+      continue;
+    }
+    try {
+      const src = await readImageAsDataUrl(file);
+      const chain = editor.chain().focus();
+      if (insertPos !== undefined) {
+        chain.insertContentAt(insertPos, { type: "image", attrs: { src } });
+        // Advance the insertion point so multi-file drops stack in order.
+        insertPos += 1;
+      } else {
+        chain.setImage({ src });
+      }
+      chain.run();
+    } catch {
+      errMsg = `Failed to read ${file.name}`;
+    }
+  }
+  return errMsg;
 }
 
 export default function TiptapEditor({
@@ -15,7 +73,18 @@ export default function TiptapEditor({
   onUpdate,
   placeholder: placeholderText,
   className,
+  maxImageBytes = DEFAULT_MAX_IMAGE_BYTES,
 }: TiptapEditorProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Inline error surface for rejected images (oversize / wrong type).
+  const [imageError, setImageError] = useState<string | null>(null);
+  const maxBytesRef = useRef(maxImageBytes);
+  maxBytesRef.current = maxImageBytes;
+  // The editor handle is read inside editorProps callbacks (handleDrop /
+  // handlePaste). It isn't available when useEditor's options are first
+  // built, so we route through a ref that we populate via onCreate.
+  const editorRef = useRef<Editor | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -23,14 +92,64 @@ export default function TiptapEditor({
         placeholder: placeholderText || "Start writing",
         emptyEditorClass: "is-editor-empty",
       }),
+      Image.configure({
+        inline: false,
+        allowBase64: true,
+        HTMLAttributes: { class: "notion-image" },
+      }),
     ],
     content,
+    onCreate: ({ editor }) => {
+      editorRef.current = editor as Editor;
+    },
     onUpdate: ({ editor }) => {
       onUpdate(editor.getHTML());
     },
     editorProps: {
       attributes: {
         class: "notion-editor focus:outline-none",
+      },
+      handleDrop(view, event, _slice, moved) {
+        // Let tiptap handle drags within the document (node moves).
+        if (moved) return false;
+        const dt = (event as DragEvent).dataTransfer;
+        if (!dt || dt.files.length === 0) return false;
+        const images = Array.from(dt.files).filter((f) =>
+          f.type.startsWith("image/"),
+        );
+        if (images.length === 0) return false;
+        event.preventDefault();
+        const ed = editorRef.current;
+        if (!ed) return false;
+        const drag = event as DragEvent;
+        const coords = view.posAtCoords({
+          left: drag.clientX,
+          top: drag.clientY,
+        });
+        const pos = coords?.pos;
+        void insertImageFiles(ed, images, maxBytesRef.current, pos).then(
+          (err) => setImageError(err),
+        );
+        return true;
+      },
+      handlePaste(_view, event) {
+        const items = (event as ClipboardEvent).clipboardData?.items;
+        if (!items) return false;
+        const images: File[] = [];
+        for (const item of Array.from(items)) {
+          if (item.kind === "file" && item.type.startsWith("image/")) {
+            const file = item.getAsFile();
+            if (file) images.push(file);
+          }
+        }
+        if (images.length === 0) return false;
+        event.preventDefault();
+        const ed = editorRef.current;
+        if (!ed) return false;
+        void insertImageFiles(ed, images, maxBytesRef.current).then((err) =>
+          setImageError(err),
+        );
+        return true;
       },
     },
   });
@@ -235,8 +354,58 @@ export default function TiptapEditor({
               <line x1="2" y1="12" x2="22" y2="12" />
             </svg>
           </ToolbarButton>
+          <ToolbarButton
+            onClick={() => fileInputRef.current?.click()}
+            title="Insert image"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </ToolbarButton>
         </div>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = e.target.files ? Array.from(e.target.files) : [];
+          // Reset so picking the same file twice in a row still fires.
+          e.target.value = "";
+          if (files.length === 0) return;
+          void insertImageFiles(editor, files, maxBytesRef.current).then(
+            (err) => setImageError(err),
+          );
+        }}
+      />
+
+      {imageError && (
+        <div
+          role="alert"
+          className="mt-2 rounded-[6px] border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
+        >
+          {imageError}
+          <button
+            type="button"
+            onClick={() => setImageError(null)}
+            className="ml-2 underline opacity-70 hover:opacity-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Editor area */}
       <div className="notion-editor-content">
