@@ -56,7 +56,7 @@ export async function applyMigrations() {
     `CREATE INDEX IF NOT EXISTS emails_recipient_received_idx ON emails(recipient, received_at)`,
     `CREATE TABLE IF NOT EXISTS sent_emails (id TEXT PRIMARY KEY, person_id TEXT, from_address TEXT NOT NULL, to_address TEXT NOT NULL, subject TEXT NOT NULL, body_html TEXT, body_text TEXT, in_reply_to TEXT, message_id TEXT, resend_id TEXT, status TEXT NOT NULL DEFAULT 'sent', cc TEXT, conversation_id TEXT, sent_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS sent_emails_person_sent_idx ON sent_emails(person_id, sent_at)`,
-    `CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, email_id TEXT NOT NULL, filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, r2_key TEXT NOT NULL, content_id TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, email_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'inbound', filename TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, r2_key TEXT NOT NULL, content_id TEXT, created_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS email_templates (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, subject TEXT NOT NULL, body_html TEXT NOT NULL, from_address TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE, key_hash TEXT NOT NULL, key_prefix TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS invitations (id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, role TEXT NOT NULL DEFAULT 'member', email TEXT, expires_at INTEGER NOT NULL, used_by TEXT REFERENCES users(id) ON DELETE SET NULL, used_at INTEGER, created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL)`,
@@ -223,7 +223,7 @@ export async function authFetch(
     headers.set("Authorization", `Bearer ${apiKey}`);
   }
 
-  if (init.body && !headers.has("Content-Type")) {
+  if (typeof init.body === "string" && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -231,6 +231,27 @@ export async function authFetch(
     ...init,
     headers,
   });
+}
+
+/**
+ * Build a multipart/form-data body for POST /api/send.
+ * The JSON payload goes in the `payload` field; files go in `files` fields.
+ */
+export function buildSendForm(
+  payload: Record<string, unknown>,
+  files: Array<{ name: string; type?: string; bytes: Uint8Array }> = [],
+): FormData {
+  const fd = new FormData();
+  fd.append("payload", JSON.stringify(payload));
+  for (const f of files) {
+    fd.append(
+      "files",
+      new File([f.bytes], f.name, {
+        type: f.type ?? "application/octet-stream",
+      }),
+    );
+  }
+  return fd;
 }
 
 /** Clean all tables between tests. */
