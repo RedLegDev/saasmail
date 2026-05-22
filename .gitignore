@@ -4,6 +4,7 @@ dist/
 .dev.vars
 wrangler.jsonc
 wrangler.demo.jsonc
+wrangler.redleg.jsonc
 .DS_Store
 *.log
 .worktrees/
